@@ -19,12 +19,16 @@ import com.morpheusdata.core.Plugin
 import com.morpheusdata.model.Cloud
 import com.morpheusdata.model.AccountCredential
 import groovy.util.logging.Slf4j
+import java.util.concurrent.Executors
+import java.util.concurrent.ScheduledExecutorService
+import java.util.concurrent.TimeUnit
 
 @Slf4j
 class ProxmoxVePlugin extends Plugin {
-    
+
     private String networkProviderCode
     public static String V2_BASE_PATH = '/api2/json'
+    private ScheduledExecutorService cleanupExecutor = Executors.newSingleThreadScheduledExecutor()
 
     @Override
     String getCode() {
@@ -41,6 +45,15 @@ class ProxmoxVePlugin extends Plugin {
         def networkProvider = new ProxmoxNetworkProvider(this, this.morpheus)
         this.registerProvider(networkProvider)
         networkProviderCode = networkProvider.code
+
+        // Start periodic cleanup of idle connections
+        cleanupExecutor.scheduleAtFixedRate({
+            try {
+                ProxmoxApiClient.cleanupIdleConnections()
+            } catch (Exception e) {
+                log.warn("Connection cleanup failed: ${e.message}")
+            }
+        }, 5, 5, TimeUnit.MINUTES)
     }
     
     def ProxmoxNetworkProvider getNetworkProvider() {
@@ -88,6 +101,7 @@ class ProxmoxVePlugin extends Plugin {
      */
     @Override
     void onDestroy() {
-        //nothing to do for now
+        cleanupExecutor.shutdownNow()
+        ProxmoxApiClient.closeAllConnections()
     }
 }
