@@ -17,27 +17,32 @@ import groovy.util.logging.Slf4j
 @Slf4j
 class ProxmoxNetworkProvider implements NetworkProvider, CloudInitializationProvider {
 
-	public static final String CLOUD_PROVIDER_CODE = 'proxmox-ve.cloud'
+        public static final String CLOUD_PROVIDER_CODE = 'proxmox-ve'
 
 	ProxmoxVePlugin plugin
 	MorpheusContext morpheus
 	SecurityGroupProvider securityGroupProvider
 
-	final String code = 'proxmox-ve.network'
+        final String code = 'proxmox-ve-network'
 	final String name = 'Proxmox Network'
 	final String description = 'Proxmox Network Provider'
 
 
-	ProxmoxNetworkProvider(ProxmoxVePlugin plugin, MorpheusContext morpheusContext) {
-		this.plugin = plugin
-		this.morpheus = morpheusContext
-	}
+        ProxmoxNetworkProvider(ProxmoxVePlugin plugin, MorpheusContext morpheusContext) {
+                this.plugin = plugin
+                this.morpheus = morpheusContext
+        }
+
+        @Override
+        String getCode() {
+                return 'proxmox-ve-network'
+        }
 
 
-	@Override
-	String getNetworkServerTypeCode() {
-		return 'proxmox-ve.network'
-	}
+        @Override
+        String getNetworkServerTypeCode() {
+                return 'proxmox-ve-network'
+        }
 
 	/**
 	 * The CloudProvider code that this NetworkProvider should be attached to.

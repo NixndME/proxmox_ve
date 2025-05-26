@@ -8,27 +8,28 @@ import java.net.URLEncoder
 
 @Slf4j
 class ProxmoxApiClient {
-    
+
     def morpheusContext
     def cloud
-    
-    ProxmoxApiClient(morpheusContext, cloud) {
+    def plugin
+
+    ProxmoxApiClient(morpheusContext, cloud, plugin) {
         this.morpheusContext = morpheusContext
         this.cloud = cloud
+        this.plugin = plugin
     }
     
     /**
      * Get stored credentials from Morpheus Cloud configuration
      */
     private Map getClusterCredentials() {
-        def username = cloud.serviceUsername
-        def password = cloud.servicePassword
-        
-        if (!username || !password) {
-            throw new RuntimeException("Proxmox cluster credentials not configured in cloud settings")
+        def authConfig = plugin.getAuthConfig(cloud)
+
+        if (!authConfig.username || !authConfig.password) {
+            throw new RuntimeException("Proxmox cluster credentials not configured")
         }
-        
-        return [username: username, password: password]
+
+        return [username: authConfig.username, password: authConfig.password]
     }
     
     /**
