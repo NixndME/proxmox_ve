@@ -114,11 +114,11 @@ class ProxmoxVeProvisionProvider extends AbstractProvisionProvider implements Vm
 	 * @since 0.13.6
 	 * @return Icon
 	 */
-	@Override
-	Icon getCircularIcon() {
-		// TODO: change icon paths to correct filenames once added to your project
-		return new Icon(path:'provision-circular.svg', darkPath:'provision-circular-dark.svg')
-	}
+       @Override
+       Icon getCircularIcon() {
+               // icon filenames located under src/assets/images
+               return new Icon(path:'proxmox-logo-stacked-color.svg', darkPath:'proxmox-logo-stacked-inverted-color.svg')
+       }
 
 	/**
 	 * Provides a Collection of OptionType inputs that need to be made available to various provisioning Wizards
