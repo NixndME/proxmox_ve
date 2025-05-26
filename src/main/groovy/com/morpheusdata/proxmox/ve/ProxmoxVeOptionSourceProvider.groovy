@@ -128,7 +128,6 @@ class ProxmoxVeOptionSourceProvider extends AbstractOptionSourceProvider {
         return options
     }
 
-    @Override
     Observable<OptionType> getOptionTypes() {
         Collection<OptionType> optionTypes = []
 
@@ -171,7 +170,6 @@ class ProxmoxVeOptionSourceProvider extends AbstractOptionSourceProvider {
         return Observable.fromIterable(optionTypes)
     }
 
-    @Override
     Observable<Map> getOptions(OptionType optionType, String searchTerm, Map config) {
         switch(optionType.code) {
             case 'proxmox-ve-nodes':
