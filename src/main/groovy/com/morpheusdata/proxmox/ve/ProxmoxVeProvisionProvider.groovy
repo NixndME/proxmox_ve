@@ -301,32 +301,43 @@ class ProxmoxVeProvisionProvider extends AbstractProvisionProvider implements Vm
 	 * @return Response from API
 	 */
 	@Override
-       ServiceResponse<ProvisionResponse> runWorkload(WorkloadRequest workloadRequest) {
+        ServiceResponse<ProvisionResponse> runWorkload(Workload workload, WorkloadRequest workloadRequest, Map opts) {
                log.info("Starting VM provisioning via Proxmox API (SSH-free)")
 
                try {
+                       // Get API client - no SSH credentials needed
                        def apiClient = new ProxmoxApiClient(context, workloadRequest.cloud, plugin)
+
+                       // Test connectivity first
                        def connectionTest = apiClient.testConnection()
                        if (!connectionTest.success) {
                                return ServiceResponse.error("Cannot connect to Proxmox: ${connectionTest.error}")
                        }
 
+                       // Build VM configuration
                        def vmConfig = buildVmConfiguration(workloadRequest)
                        def targetNode = selectTargetNode(workloadRequest)
 
+                       // Create VM via API
                        log.info("Creating VM via Proxmox API")
                        def createResult = apiClient.createVm(targetNode, vmConfig)
                        def vmId = createResult.vmid ?: vmConfig.vmid
 
+                       // Configure VM resources via API
                        configureVmResources(apiClient, targetNode, vmId, workloadRequest)
+
+                       // Configure cloud-init via API (no SSH)
                        configureCloudInitViaApi(apiClient, targetNode, vmId, workloadRequest)
 
+                       // Start VM
                        log.info("Starting VM ${vmId}")
                        apiClient.startVm(targetNode, vmId)
 
+                       // Monitor VM startup
                        def finalStatus = monitorVmStartup(apiClient, targetNode, vmId)
 
-                       updateWorkloadDetails(workloadRequest, targetNode, vmId, finalStatus)
+                       // Update workload with VM details
+                       updateWorkloadDetails(workload, workloadRequest, targetNode, vmId, finalStatus)
 
                        return ServiceResponse.success(new ProvisionResponse(success: true, message: "VM provisioned successfully"))
 
@@ -334,6 +345,33 @@ class ProxmoxVeProvisionProvider extends AbstractProvisionProvider implements Vm
                        log.error("VM provisioning failed: ${e.message}", e)
                        return ServiceResponse.error("Provisioning failed: ${e.message}")
                }
+        }
+
+       private def buildVmConfiguration(WorkloadRequest workloadRequest) {
+               def vmConfig = [:]
+               vmConfig.vmid = workloadRequest.server?.id ?: (System.currentTimeMillis() % 100000) as String
+               vmConfig.name = workloadRequest.server?.name ?: "morpheus-vm-${vmConfig.vmid}"
+               vmConfig.memory = (workloadRequest.maxMemory ?: 2048) / (1024 * 1024)
+               vmConfig.cores = workloadRequest.maxCores ?: 2
+               vmConfig.sockets = 1
+               vmConfig.ostype = workloadRequest.server?.osType == 'windows' ? 'win10' : 'l26'
+               vmConfig.storage = workloadRequest.server?.getConfigProperty('storage') ?: 'local-lvm'
+               return vmConfig
+       }
+
+       private def selectTargetNode(WorkloadRequest workloadRequest) {
+               def targetNode = workloadRequest.server?.getConfigProperty('proxmoxNode')
+               if (!targetNode) {
+                       try {
+                               def apiClient = new ProxmoxApiClient(context, workloadRequest.cloud, plugin)
+                               def nodes = apiClient.getClusterNodes()
+                               targetNode = nodes?.first()?.node
+                       } catch (Exception e) {
+                               log.warn("Could not get cluster nodes, using 'pve' as default")
+                               targetNode = 'pve'
+                       }
+               }
+               return targetNode
        }
 
        private def configureVmResources(apiClient, targetNode, vmId, workloadRequest) {
@@ -395,7 +433,12 @@ class ProxmoxVeProvisionProvider extends AbstractProvisionProvider implements Vm
                throw new RuntimeException("VM failed to start within timeout period")
        }
 
-       private def updateWorkloadDetails(workloadRequest, targetNode, vmId, status) {
+       private def updateWorkloadDetails(Workload workload, WorkloadRequest workloadRequest, targetNode, vmId, status) {
+               workload.server.externalId = vmId
+               workload.server.uniqueId = vmId
+               workload.server.powerState = 'on'
+               workload.server.hostname = workload.server.name
+
                workloadRequest.server.externalId = vmId
                workloadRequest.server.uniqueId = vmId
                workloadRequest.server.powerState = 'on'
