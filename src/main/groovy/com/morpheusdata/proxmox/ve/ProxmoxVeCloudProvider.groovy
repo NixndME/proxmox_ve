@@ -248,7 +248,7 @@ class ProxmoxVeCloudProvider implements CloudProvider {
 				agentType: ComputeServerType.AgentType.none,
 				platform: PlatformType.linux,
 				managed: true,
-				provisionTypeCode: 'proxmox-provision-provider',
+				provisionTypeCode: 'proxmox-ve-provision',
 				nodeType: 'proxmox-node'
 		)
 		serverTypes << new ComputeServerType (
@@ -263,7 +263,7 @@ class ProxmoxVeCloudProvider implements CloudProvider {
 				agentType: ComputeServerType.AgentType.guest,
 				platform: PlatformType.linux,
 				managed: true,
-				provisionTypeCode: 'proxmox-provision-provider',
+				provisionTypeCode: 'proxmox-ve-provision',
 				nodeType: 'morpheus-vm-node'
 		)
 		serverTypes << new ComputeServerType (
@@ -278,7 +278,7 @@ class ProxmoxVeCloudProvider implements CloudProvider {
 				agentType: ComputeServerType.AgentType.none,
 				platform: PlatformType.linux,
 				managed: false,
-				provisionTypeCode: 'proxmox-provision-provider',
+				provisionTypeCode: 'proxmox-ve-provision',
 				nodeType: 'unmanaged'
 		)
 		return serverTypes
