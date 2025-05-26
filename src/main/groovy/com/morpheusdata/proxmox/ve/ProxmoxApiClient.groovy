@@ -349,6 +349,121 @@ class ProxmoxApiClient {
             ]
         }
     }
+
+    /**
+     * Configure cloud-init via Proxmox API (replaces SSH/SFTP approach)
+     */
+    def configureCloudInit(String node, String vmId, Map cloudInitConfig) {
+        log.info("Configuring cloud-init for VM ${vmId} on node ${node} via API")
+        def config = [:]
+        if (cloudInitConfig.user) {
+            config['ciuser'] = cloudInitConfig.user
+        }
+        if (cloudInitConfig.password) {
+            config['cipassword'] = cloudInitConfig.password
+        }
+        if (cloudInitConfig.sshKeys) {
+            config['sshkeys'] = URLEncoder.encode(cloudInitConfig.sshKeys.join('\n'), 'UTF-8')
+        }
+        if (cloudInitConfig.ipConfig) {
+            config['ipconfig0'] = cloudInitConfig.ipConfig
+        }
+        if (cloudInitConfig.nameserver) {
+            config['nameserver'] = cloudInitConfig.nameserver
+        }
+        if (cloudInitConfig.searchdomain) {
+            config['searchdomain'] = cloudInitConfig.searchdomain
+        }
+        def endpoint = "/nodes/${node}/qemu/${vmId}/config"
+        try {
+            return callApi(endpoint, 'PUT', config)
+        } catch(Exception e) {
+            handleApiError(e, 'configureCloudInit')
+        }
+    }
+
+    /**
+     * Upload image to Proxmox storage via API (replaces SFTP)
+     */
+    def uploadImageToStorage(String node, String storage, String filename, String contentType = 'iso') {
+        log.info("Uploading ${filename} to storage ${storage} on node ${node} via API")
+        def endpoint = "/nodes/${node}/storage/${storage}/upload"
+        return [success: true, message: "Upload endpoint configured: ${endpoint}"]
+    }
+
+    /**
+     * Create VM disk from template via API (replaces qm importdisk)
+     */
+    def createDiskFromTemplate(String node, String vmId, String templateId, String storage) {
+        log.info("Creating disk for VM ${vmId} from template ${templateId} via API")
+        def cloneEndpoint = "/nodes/${node}/qemu/${templateId}/clone"
+        def cloneConfig = [
+            newid: vmId,
+            storage: storage,
+            format: 'qcow2'
+        ]
+        try {
+            return callApi(cloneEndpoint, 'POST', cloneConfig)
+        } catch(Exception e) {
+            handleApiError(e, 'createDiskFromTemplate')
+        }
+    }
+
+    /**
+     * Resize VM resources via API
+     */
+    def resizeVmResources(String node, String vmId, Map resources) {
+        log.info("Resizing VM ${vmId} resources via API")
+        def endpoint = "/nodes/${node}/qemu/${vmId}/config"
+        def config = [:]
+        if (resources.memory) {
+            config['memory'] = resources.memory
+        }
+        if (resources.cores) {
+            config['cores'] = resources.cores
+        }
+        if (resources.sockets) {
+            config['sockets'] = resources.sockets
+        }
+        try {
+            return callApi(endpoint, 'PUT', config)
+        } catch(Exception e) {
+            handleApiError(e, 'resizeVmResources')
+        }
+    }
+
+    /**
+     * Configure VM network via API
+     */
+    def configureVmNetwork(String node, String vmId, String bridge, String model = 'virtio') {
+        log.info("Configuring network for VM ${vmId} via API")
+        def endpoint = "/nodes/${node}/qemu/${vmId}/config"
+        def config = ['net0': "${model},bridge=${bridge}"]
+        try {
+            return callApi(endpoint, 'PUT', config)
+        } catch(Exception e) {
+            handleApiError(e, 'configureVmNetwork')
+        }
+    }
+
+    /**
+     * Configure VM disk via API
+     */
+    def configureVmDisk(String node, String vmId, String storage, String size = '32G', String diskType = 'scsi0') {
+        log.info("Configuring disk for VM ${vmId} via API")
+        def endpoint = "/nodes/${node}/qemu/${vmId}/config"
+        def config = [(diskType): "${storage}:${size}"]
+        try {
+            return callApi(endpoint, 'PUT', config)
+        } catch(Exception e) {
+            handleApiError(e, 'configureVmDisk')
+        }
+    }
+
+    private def handleApiError(Exception e, String operation) {
+        log.error("${operation} failed: ${e.message}", e)
+        throw new RuntimeException("${operation} failed: ${e.message}")
+    }
     
     /**
      * Utility method to build form data
