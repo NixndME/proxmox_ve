@@ -1,4 +1,4 @@
-package com.morpheusdata.proxmox
+package com.morpheusdata.proxmox.ve
 
 import com.morpheusdata.core.util.RestApiUtil
 import groovy.json.JsonSlurper
