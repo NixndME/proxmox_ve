@@ -1,8 +1,7 @@
 package com.morpheusdata.proxmox.ve
 
-import com.morpheusdata.core.util.RestApiUtil
+import com.morpheusdata.core.util.HttpApiClient
 import groovy.json.JsonSlurper
-import groovy.json.JsonBuilder
 import groovy.util.logging.Slf4j
 import java.net.URLEncoder
 
@@ -12,6 +11,10 @@ class ProxmoxApiClient {
     def morpheusContext
     def cloud
     def plugin
+
+    private static final HttpApiClient HTTP_CLIENT = new HttpApiClient()
+    private Map tokenCache = [:]
+    private static final long TOKEN_TTL_MS = 1000L * 60 * 60 * 2
 
     ProxmoxApiClient(morpheusContext, cloud, plugin) {
         this.morpheusContext = morpheusContext
@@ -33,36 +36,42 @@ class ProxmoxApiClient {
     }
     
     /**
-     * Make HTTP call using Morpheus RestApiUtil
+     * Make HTTP call using a reusable HttpApiClient instance
      */
-    def makeHttpCall(String url, String method, Map headers = [:], String body = null) {
+    def makeHttpCall(String path, String method, Map headers = [:], String body = null) {
         try {
             def opts = [
-                headers: headers,
+                headers : headers,
                 ignoreSSL: cloud.ignoreSsl ?: false,
-                timeout: 30000
+                timeout  : 30000
             ]
-            
+
             if (body) {
                 opts.body = body
             }
-            
-            log.debug("Making ${method} call to: ${url}")
-            
-            // Use correct RestApiUtil method
-            def result = RestApiUtil.callApi(url, opts, method)
-            
-            if (result.success) {
-                if (result.data) {
+
+            log.debug("Making ${method} call to: ${path}")
+
+            def result = HTTP_CLIENT.callJsonApi(
+                    cloud.serviceUrl,
+                    path,
+                    null,
+                    null,
+                    new HttpApiClient.RequestOptions(opts),
+                    method
+            )
+
+            if (result?.success) {
+                if (result.content) {
                     def jsonSlurper = new JsonSlurper()
-                    return jsonSlurper.parseText(result.data)
+                    return jsonSlurper.parseText(result.content)
                 }
-                return [:]
+                return result.data ?: [:]
             } else {
-                throw new RuntimeException("HTTP call failed: ${result.errorMessage ?: result.error}")
+                throw new RuntimeException("HTTP call failed: ${result?.errorMessage ?: result?.error}")
             }
         } catch (Exception e) {
-            log.error("HTTP call error for ${url}: ${e.message}", e)
+            log.error("HTTP call error for ${path}: ${e.message}", e)
             throw new RuntimeException("API call failed: ${e.message}")
         }
     }
@@ -70,25 +79,26 @@ class ProxmoxApiClient {
     /**
      * Authenticate with Proxmox cluster and get ticket
      */
-    def authenticate() {
+    private Map authenticate() {
         def credentials = getClusterCredentials()
-        
-        def authUrl = "${cloud.serviceUrl}/api2/json/access/ticket"
+
+        def authUrl = "/api2/json/access/ticket"
         def formData = "username=${URLEncoder.encode(credentials.username, 'UTF-8')}&password=${URLEncoder.encode(credentials.password, 'UTF-8')}"
-        
+
         def headers = [
             'Content-Type': 'application/x-www-form-urlencoded'
         ]
-        
+
         try {
             log.info("Authenticating with Proxmox cluster...")
             def result = makeHttpCall(authUrl, 'POST', headers, formData)
-            
+
             if (result.data?.ticket) {
                 log.info("Successfully authenticated with Proxmox cluster")
                 return [
-                    ticket: result.data.ticket,
-                    csrfToken: result.data.CSRFPreventionToken
+                    ticket    : result.data.ticket,
+                    csrfToken : result.data.CSRFPreventionToken,
+                    expiresAt : System.currentTimeMillis() + TOKEN_TTL_MS
                 ]
             } else {
                 throw new RuntimeException("Authentication failed: No ticket received")
@@ -98,19 +108,27 @@ class ProxmoxApiClient {
             throw new RuntimeException("Proxmox authentication failed: ${e.message}")
         }
     }
+
+    private Map getAuthToken() {
+        if (tokenCache?.ticket && tokenCache.expiresAt > System.currentTimeMillis()) {
+            return tokenCache
+        }
+        tokenCache = authenticate()
+        return tokenCache
+    }
     
     /**
      * Make authenticated API call to Proxmox
      */
     def callApi(String endpoint, String method = 'GET', Map data = null) {
-        def auth = authenticate()
-        
-        def url = "${cloud.serviceUrl}/api2/json${endpoint}"
+        def auth = getAuthToken()
+
+        def path = "/api2/json${endpoint}"
         def headers = [
             'Cookie': "PVEAuthCookie=${auth.ticket}",
             'CSRFPreventionToken': auth.csrfToken
         ]
-        
+
         String body = null
         if (data && (method == 'POST' || method == 'PUT')) {
             headers['Content-Type'] = 'application/x-www-form-urlencoded'
@@ -119,7 +137,7 @@ class ProxmoxApiClient {
         
         try {
             log.debug("Making ${method} call to: ${endpoint}")
-            return makeHttpCall(url, method, headers, body)
+            return makeHttpCall(path, method, headers, body)
         } catch (Exception e) {
             log.error("API call failed for ${endpoint}: ${e.message}", e)
             throw e
