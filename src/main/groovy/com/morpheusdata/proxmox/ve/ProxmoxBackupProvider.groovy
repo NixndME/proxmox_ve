@@ -1,8 +1,9 @@
 package com.morpheusdata.proxmox.ve
 
-import com.morpheusdata.core.AbstractBackupProvider
+import com.morpheusdata.core.backup.BackupProvider
 import com.morpheusdata.core.MorpheusContext
 import com.morpheusdata.core.Plugin
+import com.morpheusdata.model.OptionType
 import com.morpheusdata.model.Backup
 import com.morpheusdata.model.BackupJob
 import com.morpheusdata.model.BackupResult
@@ -12,16 +13,36 @@ import com.morpheusdata.response.ServiceResponse
 import groovy.util.logging.Slf4j
 
 @Slf4j
-class ProxmoxBackupProvider extends AbstractBackupProvider {
+class ProxmoxBackupProvider implements BackupProvider {
 
     public static final String PROVIDER_CODE = 'proxmox-ve-backup'
 
     protected MorpheusContext morpheusContext
     protected ProxmoxVePlugin plugin
 
-    ProxmoxBackupProvider(ProxmoxVePlugin plugin, MorpheusContext context) {
-        this.plugin = plugin
-        this.morpheusContext = context
+    ProxmoxBackupProvider(Plugin plugin, MorpheusContext morpheusContext) {
+        this.plugin = (ProxmoxVePlugin) plugin
+        this.morpheusContext = morpheusContext
+    }
+
+    @Override
+    MorpheusContext getMorpheus() {
+        return morpheusContext
+    }
+
+    @Override
+    Plugin getPlugin() {
+        return plugin
+    }
+
+    @Override
+    Collection<OptionType> getOptionTypes() {
+        return []
+    }
+
+    @Override
+    Boolean canBackupServer(ComputeServer server) {
+        return true
     }
 
     @Override
