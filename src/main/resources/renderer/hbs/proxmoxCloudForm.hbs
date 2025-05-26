@@ -1,0 +1,45 @@
+<form class="form">
+  <div class="row">
+    <div class="col-md-6">
+      <div class="form-group required">
+        <label for="serviceUrl" class="control-label">Service URL</label>
+        <input type="text" class="form-control" id="serviceUrl" name="serviceUrl" value="{{cloudConfig.serviceUrl}}" required>
+      </div>
+    </div>
+    <div class="col-md-6">
+      <div class="form-group required">
+        <label for="username" class="control-label">Username</label>
+        <input type="text" class="form-control" id="username" name="username" value="{{cloudConfig.username}}" required>
+      </div>
+    </div>
+    <div class="col-md-6">
+      <div class="form-group required">
+        <label for="password" class="control-label">Password</label>
+        <input type="password" class="form-control" id="password" name="password" value="{{cloudConfig.password}}" required>
+      </div>
+    </div>
+    <div class="col-md-6">
+      <div class="form-group">
+        <div class="form-check mt-4">
+          <input type="checkbox" class="form-check-input" id="ignoreSsl" name="ignoreSsl" {{#if cloudConfig.ignoreSsl}}checked{{/if}}>
+          <label class="form-check-label" for="ignoreSsl">Ignore SSL</label>
+        </div>
+        <small class="text-warning">Ignoring SSL verification can be insecure.</small>
+      </div>
+    </div>
+    <div class="col-md-6">
+      <div class="form-group">
+        <label for="datacenter" class="control-label">Datacenter</label>
+        <input type="text" class="form-control" id="datacenter" name="datacenter" value="{{cloudConfig.datacenter}}">
+      </div>
+    </div>
+    <div class="col-md-6">
+      <div class="form-group">
+        <div class="form-check mt-4">
+          <input type="checkbox" class="form-check-input" id="enabled" name="enabled" {{#if cloudConfig.enabled}}checked{{/if}}>
+          <label class="form-check-label" for="enabled">Enabled</label>
+        </div>
+      </div>
+    </div>
+  </div>
+</form>

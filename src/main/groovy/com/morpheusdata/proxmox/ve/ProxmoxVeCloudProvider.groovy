@@ -33,7 +33,7 @@ import groovy.util.logging.Slf4j
 
 @Slf4j
 class ProxmoxVeCloudProvider implements CloudProvider {
-	public static final String CLOUD_PROVIDER_CODE = 'proxmox-ve.cloud'
+        public static final String CLOUD_PROVIDER_CODE = 'proxmox-ve'
 
 	protected MorpheusContext context
 	protected ProxmoxVePlugin plugin
@@ -248,7 +248,7 @@ class ProxmoxVeCloudProvider implements CloudProvider {
 				agentType: ComputeServerType.AgentType.none,
 				platform: PlatformType.linux,
 				managed: true,
-				provisionTypeCode: 'proxmox-provision-provider',
+				provisionTypeCode: 'proxmox-ve-provision',
 				nodeType: 'proxmox-node'
 		)
 		serverTypes << new ComputeServerType (
@@ -263,7 +263,7 @@ class ProxmoxVeCloudProvider implements CloudProvider {
 				agentType: ComputeServerType.AgentType.guest,
 				platform: PlatformType.linux,
 				managed: true,
-				provisionTypeCode: 'proxmox-provision-provider',
+				provisionTypeCode: 'proxmox-ve-provision',
 				nodeType: 'morpheus-vm-node'
 		)
 		serverTypes << new ComputeServerType (
@@ -278,7 +278,7 @@ class ProxmoxVeCloudProvider implements CloudProvider {
 				agentType: ComputeServerType.AgentType.none,
 				platform: PlatformType.linux,
 				managed: false,
-				provisionTypeCode: 'proxmox-provision-provider',
+				provisionTypeCode: 'proxmox-ve-provision',
 				nodeType: 'unmanaged'
 		)
 		return serverTypes
@@ -565,10 +565,10 @@ class ProxmoxVeCloudProvider implements CloudProvider {
 	 * that is seeded or generated related to this provider will reference it by this code.
 	 * @return short code string that should be unique across all other plugin implementations.
 	 */
-	@Override
-	String getCode() {
-		return CLOUD_PROVIDER_CODE
-	}
+        @Override
+        String getCode() {
+                return 'proxmox-ve'
+        }
 
 	/**
 	 * Provides the provider name for reference when adding to the Morpheus Orchestrator

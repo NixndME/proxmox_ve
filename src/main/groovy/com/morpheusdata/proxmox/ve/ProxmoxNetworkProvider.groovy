@@ -17,27 +17,32 @@ import groovy.util.logging.Slf4j
 @Slf4j
 class ProxmoxNetworkProvider implements NetworkProvider, CloudInitializationProvider {
 
-	public static final String CLOUD_PROVIDER_CODE = 'proxmox-ve.cloud'
+        public static final String CLOUD_PROVIDER_CODE = 'proxmox-ve'
 
 	ProxmoxVePlugin plugin
 	MorpheusContext morpheus
 	SecurityGroupProvider securityGroupProvider
 
-	final String code = 'proxmox-ve.network'
+        final String code = 'proxmox-ve-network'
 	final String name = 'Proxmox Network'
 	final String description = 'Proxmox Network Provider'
 
 
-	ProxmoxNetworkProvider(ProxmoxVePlugin plugin, MorpheusContext morpheusContext) {
-		this.plugin = plugin
-		this.morpheus = morpheusContext
-	}
+        ProxmoxNetworkProvider(ProxmoxVePlugin plugin, MorpheusContext morpheusContext) {
+                this.plugin = plugin
+                this.morpheus = morpheusContext
+        }
+
+        @Override
+        String getCode() {
+                return 'proxmox-ve-network'
+        }
 
 
-	@Override
-	String getNetworkServerTypeCode() {
-		return 'proxmox-ve.network'
-	}
+        @Override
+        String getNetworkServerTypeCode() {
+                return 'proxmox-ve-network'
+        }
 
 	/**
 	 * The CloudProvider code that this NetworkProvider should be attached to.
@@ -132,11 +137,31 @@ class ProxmoxNetworkProvider implements NetworkProvider, CloudInitializationProv
 	 * @param opts additional configuration options
 	 * @return ServiceResponse
 	 */
-	@Override
-	ServiceResponse createNetwork(Network network, Map opts) {
-		log.info("NVR: CREATE NETWORK")
-		return ServiceResponse.success(network)
-	}
+        @Override
+        ServiceResponse createNetwork(Network network, Map opts) {
+                try {
+                        def apiClient = new ProxmoxApiClient(morpheus, network.cloud, plugin)
+
+                        def networkConfig = [
+                                iface    : network.name,
+                                type     : 'bridge',
+                                autostart: 1
+                        ]
+
+                        def targetNode = opts?.targetNode ?: 'pve'
+                        def result = apiClient.callApi("/nodes/${targetNode}/network", 'POST', networkConfig)
+
+                        if (result) {
+                                network.externalId = network.name
+                                return ServiceResponse.success(network)
+                        } else {
+                                return ServiceResponse.error("Failed to create network")
+                        }
+                } catch (Exception e) {
+                        log.error("Network creation failed: ${e.message}", e)
+                        return ServiceResponse.error("Network creation failed: ${e.message}")
+                }
+        }
 
 	/**
 	 * Updates the Network submitted
@@ -144,22 +169,53 @@ class ProxmoxNetworkProvider implements NetworkProvider, CloudInitializationProv
 	 * @param opts additional configuration options
 	 * @return ServiceResponse
 	 */
-	@Override
-	ServiceResponse<Network> updateNetwork(Network network, Map opts) {
-		log.info("NVR: UPDATE NETWORK")
-		return ServiceResponse.success(network)
-	}
+        @Override
+        ServiceResponse<Network> updateNetwork(Network network, Map opts) {
+                try {
+                        def apiClient = new ProxmoxApiClient(morpheus, network.cloud, plugin)
+
+                        def networkConfig = [
+                                iface    : network.name,
+                                type     : 'bridge',
+                                autostart: 1
+                        ]
+
+                        def targetNode = opts?.targetNode ?: network.configMap?.targetNode ?: 'pve'
+                        def result = apiClient.callApi("/nodes/${targetNode}/network/${network.externalId}", 'PUT', networkConfig)
+
+                        if (result) {
+                                return ServiceResponse.success(network)
+                        } else {
+                                return ServiceResponse.error("Failed to update network")
+                        }
+                } catch (Exception e) {
+                        log.error("Network update failed: ${e.message}", e)
+                        return ServiceResponse.error("Network update failed: ${e.message}")
+                }
+        }
 
 	/**
 	 * Deletes the Network submitted
 	 * @param network Network information
 	 * @return ServiceResponse
 	 */
-	@Override
-	ServiceResponse deleteNetwork(Network network, Map opts) {
-		log.info("NVR: DELETE NETWORK")
-		return ServiceResponse.success()
-	}
+        @Override
+        ServiceResponse deleteNetwork(Network network, Map opts) {
+                try {
+                        def apiClient = new ProxmoxApiClient(morpheus, network.cloud, plugin)
+                        def targetNode = network.configMap?.targetNode ?: 'pve'
+                        def result = apiClient.callApi("/nodes/${targetNode}/network/${network.externalId}", 'DELETE')
+
+                        if (result) {
+                                return ServiceResponse.success()
+                        } else {
+                                return ServiceResponse.error("Failed to delete network")
+                        }
+                } catch (Exception e) {
+                        log.error("Network deletion failed: ${e.message}", e)
+                        return ServiceResponse.error("Network deletion failed: ${e.message}")
+                }
+        }
 	
 	@Override
 	ServiceResponse createSubnet(NetworkSubnet subnet, Network network, Map opts) {

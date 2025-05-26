@@ -30,6 +30,11 @@ class ProxmoxVeVirtualImageDatasetProvider extends AbstractDatasetProvider<Virtu
             this.morpheusContext = morpheus
         }
 
+        @Override
+        String getCode() {
+            return 'proxmox-ve-virtual-image-dataset'
+        }
+
 
         String getKey() {
             return providerKey
