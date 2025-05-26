@@ -37,7 +37,7 @@ import groovy.util.logging.Slf4j
 
 @Slf4j
 class ProxmoxVeProvisionProvider extends AbstractProvisionProvider implements VmProvisionProvider, WorkloadProvisionProvider, WorkloadProvisionProvider.ResizeFacet { //, ProvisionProvider.BlockDeviceNameFacet {
-	public static final String PROVISION_PROVIDER_CODE = 'proxmox-provision-provider'
+        public static final String PROVISION_PROVIDER_CODE = 'proxmox-ve-provision'
 
 	protected MorpheusContext context
 	protected ProxmoxVePlugin plugin
@@ -697,10 +697,10 @@ class ProxmoxVeProvisionProvider extends AbstractProvisionProvider implements Vm
 	 * that is seeded or generated related to this provider will reference it by this code.
 	 * @return short code string that should be unique across all other plugin implementations.
 	 */
-	@Override
-	String getCode() {
-		return PROVISION_PROVIDER_CODE
-	}
+        @Override
+        String getCode() {
+                return 'proxmox-ve-provision'
+        }
 
 	/**
 	 * Provides the provider name for reference when adding to the Morpheus Orchestrator
