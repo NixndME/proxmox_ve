@@ -692,6 +692,66 @@ class ProxmoxApiClient {
         }
     }
 
+    /**
+     * Create vzdump backup
+     */
+    def createVzdumpBackup(String node, Map backupConfig) {
+        log.info("Creating vzdump backup on node ${node}")
+        def endpoint = "/nodes/${node}/vzdump"
+        return callApi(endpoint, 'POST', backupConfig)
+    }
+
+    /**
+     * Get task status
+     */
+    def getTaskStatus(String node, String taskId) {
+        def endpoint = "/nodes/${node}/tasks/${taskId}/status"
+        return callApi(endpoint, 'GET')
+    }
+
+    /**
+     * Get backup files from storage
+     */
+    def getStorageBackups(String node, String storage) {
+        def endpoint = "/nodes/${node}/storage/${storage}/content"
+        return callApi(endpoint, 'GET')
+    }
+
+    /**
+     * Delete backup file
+     */
+    def deleteBackupFile(String node, String storage, String volid) {
+        log.info("Deleting backup file ${volid} from ${storage} on ${node}")
+        def endpoint = "/nodes/${node}/storage/${storage}/content/${URLEncoder.encode(volid, 'UTF-8')}"
+        return callApi(endpoint, 'DELETE')
+    }
+
+    /**
+     * Rollback snapshot
+     */
+    def rollbackSnapshot(String node, String vmId, String snapname) {
+        log.info("Rolling back snapshot ${snapname} for VM ${vmId} on node ${node}")
+        def endpoint = "/nodes/${node}/qemu/${vmId}/snapshot/${snapname}/rollback"
+        return callApi(endpoint, 'POST')
+    }
+
+    /**
+     * Restore backup file
+     */
+    def restoreBackup(String node, Map restoreConfig) {
+        log.info("Restoring backup on node ${node}")
+        def endpoint = "/nodes/${node}/qemu/${restoreConfig.vmid}/restore"
+        return callApi(endpoint, 'POST', restoreConfig)
+    }
+
+    /**
+     * Get next available VM ID
+     */
+    def getNextVmId(String node) {
+        def endpoint = "/cluster/nextid"
+        return callApi(endpoint, 'GET')
+    }
+
     private def handleApiError(Exception e, String operation) {
         log.error("${operation} failed: ${e.message}", e)
         throw new RuntimeException("${operation} failed: ${e.message}")
