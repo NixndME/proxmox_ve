@@ -332,4 +332,32 @@ class ProxmoxVeOptionSourceProvider extends AbstractOptionSourceProvider {
         }
         return null
     }
+
+    def getVlanOptions(Map config, String searchTerm) {
+        def options = []
+        for (int i = 1; i <= 4094; i++) {
+            if (!searchTerm || i.toString().contains(searchTerm)) {
+                options << [
+                        name : "VLAN ${i}",
+                        value: i,
+                        id   : i
+                ]
+            }
+            if (options.size() >= 100) break
+        }
+
+        return Observable.fromIterable(options)
+    }
+
+    def getBondModeOptions() {
+        def modes = [
+                [name: 'Active-Backup', value: 'active-backup', id: 'active-backup'],
+                [name: 'Balance XOR', value: 'balance-xor', id: 'balance-xor'],
+                [name: 'Balance TLB', value: 'balance-tlb', id: 'balance-tlb'],
+                [name: 'Balance ALB', value: 'balance-alb', id: 'balance-alb'],
+                [name: '802.3ad LACP', value: '802.3ad', id: '802.3ad']
+        ]
+
+        return Observable.fromIterable(modes)
+    }
 }

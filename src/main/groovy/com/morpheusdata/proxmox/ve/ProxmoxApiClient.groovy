@@ -340,6 +340,126 @@ class ProxmoxApiClient {
         def endpoint = "/nodes/${node}/network"
         return callApi(endpoint, 'GET')
     }
+
+    /**
+     * Create VLAN interface on Proxmox node
+     */
+    def createVlan(String node, String bridge, int vlanId, Map config = [:]) {
+        log.info("Creating VLAN ${vlanId} on bridge ${bridge} at node ${node}")
+
+        def vlanInterface = "${bridge}.${vlanId}"
+        def vlanConfig = [
+            iface          : vlanInterface,
+            type           : 'vlan',
+            'vlan-raw-device': bridge,
+            'vlan-id'      : vlanId,
+            autostart      : config.autostart ?: 1
+        ]
+
+        if (config.ipAddress) {
+            vlanConfig.address = config.ipAddress
+            vlanConfig.netmask = config.netmask ?: '255.255.255.0'
+        }
+
+        if (config.gateway) {
+            vlanConfig.gateway = config.gateway
+        }
+
+        def endpoint = "/nodes/${node}/network"
+        return callApi(endpoint, 'POST', vlanConfig)
+    }
+
+    /**
+     * Delete VLAN interface
+     */
+    def deleteVlan(String node, String bridge, int vlanId) {
+        log.info("Deleting VLAN ${vlanId} on bridge ${bridge} at node ${node}")
+
+        def vlanInterface = "${bridge}.${vlanId}"
+        def endpoint = "/nodes/${node}/network/${vlanInterface}"
+        return callApi(endpoint, 'DELETE')
+    }
+
+    /**
+     * Update VLAN configuration
+     */
+    def updateVlan(String node, String vlanInterface, Map config) {
+        log.info("Updating VLAN ${vlanInterface} on node ${node}")
+
+        def endpoint = "/nodes/${node}/network/${vlanInterface}"
+        return callApi(endpoint, 'PUT', config)
+    }
+
+    /**
+     * Get VLAN information
+     */
+    def getVlanInfo(String node, String vlanInterface) {
+        def endpoint = "/nodes/${node}/network/${vlanInterface}"
+        return callApi(endpoint, 'GET')
+    }
+
+    /**
+     * Create network bond for high availability
+     */
+    def createBond(String node, String bondName, List<String> slaves, Map config = [:]) {
+        log.info("Creating bond ${bondName} on node ${node} with slaves ${slaves}")
+
+        def bondConfig = [
+            iface      : bondName,
+            type       : 'bond',
+            slaves     : slaves.join(' '),
+            'bond_mode': config.bondMode ?: 'active-backup',
+            'bond_miimon': config.miimon ?: 100,
+            autostart  : config.autostart ?: 1
+        ]
+
+        if (config.ipAddress) {
+            bondConfig.address = config.ipAddress
+            bondConfig.netmask = config.netmask ?: '255.255.255.0'
+        }
+
+        def endpoint = "/nodes/${node}/network"
+        return callApi(endpoint, 'POST', bondConfig)
+    }
+
+    /**
+     * Delete network bond
+     */
+    def deleteBond(String node, String bondName) {
+        log.info("Deleting bond ${bondName} on node ${node}")
+
+        def endpoint = "/nodes/${node}/network/${bondName}"
+        return callApi(endpoint, 'DELETE')
+    }
+
+    /**
+     * Create advanced bridge with VLAN filtering
+     */
+    def createAdvancedBridge(String node, String bridgeName, Map config = [:]) {
+        log.info("Creating advanced bridge ${bridgeName} on node ${node}")
+
+        def bridgeConfig = [
+            iface          : bridgeName,
+            type           : 'bridge',
+            autostart      : config.autostart ?: 1,
+            'bridge_ports'  : config.ports ?: 'none',
+            'bridge_stp'    : config.stp ? 'on' : 'off',
+            'bridge_fd'     : config.forwardDelay ?: 0
+        ]
+
+        if (config.vlanAware) {
+            bridgeConfig['bridge_vlan_aware'] = 'yes'
+            bridgeConfig['bridge_vids'] = config.vlanRange ?: '2-4094'
+        }
+
+        if (config.ipAddress) {
+            bridgeConfig.address = config.ipAddress
+            bridgeConfig.netmask = config.netmask ?: '255.255.255.0'
+        }
+
+        def endpoint = "/nodes/${node}/network"
+        return callApi(endpoint, 'POST', bridgeConfig)
+    }
     
     /**
      * Get VM list for a node
