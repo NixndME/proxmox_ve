@@ -1,0 +1,29 @@
+name: proxmox-ve-plugin
+code: proxmox-ve
+version: 1.0.0
+description: Proxmox VE Cloud Provider Plugin for Morpheus
+author: Marketplace Data
+website: https://marketplace-data.com
+sourceCodeLocationUrl: https://github.com/marketplace-data/morpheus-proxmox-plugin
+issueTrackerUrl: https://github.com/marketplace-data/morpheus-proxmox-plugin/issues
+
+providers:
+- code: proxmox-ve
+  name: Proxmox VE
+  class: com.morpheusdata.proxmox.ve.ProxmoxVeCloudProvider
+
+- code: proxmox-ve-provision
+  name: Proxmox VE Provision
+  class: com.morpheusdata.proxmox.ve.ProxmoxVeProvisionProvider
+
+- code: proxmox-ve-network
+  name: Proxmox VE Network
+  class: com.morpheusdata.proxmox.ve.ProxmoxNetworkProvider
+
+- code: proxmox-ve-option-source
+  name: Proxmox VE Option Source
+  class: com.morpheusdata.proxmox.ve.ProxmoxVeOptionSourceProvider
+
+- code: proxmox-ve-virtual-image-dataset
+  name: Proxmox VE Virtual Image Dataset
+  class: com.morpheusdata.proxmox.ve.ProxmoxVeVirtualImageDatasetProvider
