@@ -4,6 +4,8 @@ import com.morpheusdata.core.util.HttpApiClient
 import groovy.json.JsonSlurper
 import groovy.util.logging.Slf4j
 import java.net.URLEncoder
+import java.util.concurrent.ConcurrentHashMap
+import java.util.concurrent.ConcurrentLinkedQueue
 
 @Slf4j
 class ProxmoxApiClient {
@@ -13,13 +15,99 @@ class ProxmoxApiClient {
     def plugin
 
     private static final HttpApiClient HTTP_CLIENT = new HttpApiClient()
-    private Map tokenCache = [:]
-    private static final long TOKEN_TTL_MS = 1000L * 60 * 60 * 2
+
+    // Connection pool properties
+    private static final Map<String, ConnectionPool> connectionPools = [:]
+    private static final int MAX_CONNECTIONS_PER_HOST = 10
+    private static final int CONNECTION_TIMEOUT_MS = 30000
+    private static final int IDLE_TIMEOUT_MS = 300000 // 5 minutes
+
+    // Token caching properties
+    private String cachedTicket = null
+    private String cachedCSRFToken = null
+    private long tokenExpiry = 0
+    private static final long TOKEN_LIFETIME_MS = 7200000L // 2 hours
 
     ProxmoxApiClient(morpheusContext, cloud, plugin) {
         this.morpheusContext = morpheusContext
         this.cloud = cloud
         this.plugin = plugin
+    }
+
+    /**
+     * Simple HTTP connection wrapper used by the connection pool
+     */
+    private static class HttpConnection {
+        String url
+        Map<String,String> headers = [:]
+        boolean ignoreSSL
+        HttpApiClient client = new HttpApiClient()
+        long lastUsed = System.currentTimeMillis()
+        boolean inUse = false
+        boolean valid = true
+
+        HttpConnection(String url, Map<String,String> headers = [:], boolean ignoreSSL = false) {
+            this.url = url
+            this.headers.putAll(headers)
+            this.ignoreSSL = ignoreSSL
+        }
+
+        void updateHeaders(Map newHeaders) {
+            if(newHeaders)
+                this.headers.putAll(newHeaders)
+        }
+
+        boolean isValid() {
+            return valid
+        }
+
+        void markAsInvalid() {
+            valid = false
+        }
+    }
+
+    /**
+     * Connection pool per host
+     */
+    private static class ConnectionPool {
+        Queue<HttpConnection> availableConnections = new ConcurrentLinkedQueue<>()
+        Set<HttpConnection> activeConnections = ConcurrentHashMap.newKeySet()
+        String hostKey
+        long lastUsed = System.currentTimeMillis()
+
+        ConnectionPool(String hostKey) {
+            this.hostKey = hostKey
+        }
+
+        HttpConnection borrowConnection() {
+            lastUsed = System.currentTimeMillis()
+            HttpConnection conn = availableConnections.poll()
+            if(conn) {
+                activeConnections.add(conn)
+                conn.inUse = true
+                return conn
+            }
+            return null
+        }
+
+        void returnConnection(HttpConnection connection) {
+            if(connection) {
+                connection.inUse = false
+                connection.lastUsed = System.currentTimeMillis()
+                activeConnections.remove(connection)
+                availableConnections.add(connection)
+            }
+        }
+
+        void cleanup() {
+            availableConnections.clear()
+            activeConnections.clear()
+        }
+
+        void cleanupIdleConnections() {
+            long now = System.currentTimeMillis()
+            availableConnections.removeIf { c -> (now - c.lastUsed) > IDLE_TIMEOUT_MS || !c.isValid() }
+        }
     }
     
     /**
@@ -36,42 +124,42 @@ class ProxmoxApiClient {
     }
     
     /**
-     * Make HTTP call using a reusable HttpApiClient instance
+     * Make HTTP call using connection pooling
      */
-    def makeHttpCall(String path, String method, Map headers = [:], String body = null) {
+    def makeHttpCall(String url, String method, Map headers = [:], String body = null) {
+        def startTime = System.currentTimeMillis()
+        boolean connectionFromPool = false
+        def hostKey = extractHostKey(url)
+        def pool = getOrCreateConnectionPool(hostKey)
+        HttpConnection connection = null
+
         try {
-            def opts = [
-                headers : headers,
-                ignoreSSL: cloud.ignoreSsl ?: false,
-                timeout  : 30000
-            ]
-
-            if (body) {
-                opts.body = body
-            }
-
-            log.debug("Making ${method} call to: ${path}")
-
-            def result = HTTP_CLIENT.callJsonApi(
-                    cloud.serviceUrl,
-                    path,
-                    null,
-                    null,
-                    new HttpApiClient.RequestOptions(opts),
-                    method
-            )
-
-            if (result?.success) {
-                if (result.content) {
-                    def jsonSlurper = new JsonSlurper()
-                    return jsonSlurper.parseText(result.content)
-                }
-                return result.data ?: [:]
+            // Get connection from pool
+            connection = pool.borrowConnection()
+            if (!connection || !connection.isValid()) {
+                connection = createNewConnection(url, headers)
             } else {
-                throw new RuntimeException("HTTP call failed: ${result?.errorMessage ?: result?.error}")
+                connectionFromPool = true
+                connection.updateHeaders(headers)
             }
+
+            // Make the request
+            def result = executeRequest(connection, method, body)
+
+            // Return connection to pool
+            pool.returnConnection(connection)
+
+            def endTime = System.currentTimeMillis()
+            def duration = endTime - startTime
+            log.debug("API call completed in ${duration}ms (pool hit: ${connectionFromPool})")
+
+            return processResponse(result)
+
         } catch (Exception e) {
-            log.error("HTTP call error for ${path}: ${e.message}", e)
+            if (connection) {
+                connection.markAsInvalid()
+            }
+            log.error("HTTP call error: ${e.message}", e)
             throw new RuntimeException("API call failed: ${e.message}")
         }
     }
@@ -80,41 +168,46 @@ class ProxmoxApiClient {
      * Authenticate with Proxmox cluster and get ticket
      */
     private Map authenticate() {
+        if (cachedTicket && cachedCSRFToken && System.currentTimeMillis() < tokenExpiry) {
+            log.debug("Using cached authentication token")
+            return [ticket: cachedTicket, csrfToken: cachedCSRFToken]
+        }
+
         def credentials = getClusterCredentials()
-
-        def authUrl = "/api2/json/access/ticket"
+        def authUrl = "${cloud.serviceUrl}/api2/json/access/ticket"
         def formData = "username=${URLEncoder.encode(credentials.username, 'UTF-8')}&password=${URLEncoder.encode(credentials.password, 'UTF-8')}"
-
-        def headers = [
-            'Content-Type': 'application/x-www-form-urlencoded'
-        ]
+        def headers = ['Content-Type': 'application/x-www-form-urlencoded']
 
         try {
             log.info("Authenticating with Proxmox cluster...")
             def result = makeHttpCall(authUrl, 'POST', headers, formData)
 
             if (result.data?.ticket) {
-                log.info("Successfully authenticated with Proxmox cluster")
-                return [
-                    ticket    : result.data.ticket,
-                    csrfToken : result.data.CSRFPreventionToken,
-                    expiresAt : System.currentTimeMillis() + TOKEN_TTL_MS
-                ]
+                // Cache the authentication tokens
+                cachedTicket = result.data.ticket
+                cachedCSRFToken = result.data.CSRFPreventionToken
+                tokenExpiry = System.currentTimeMillis() + TOKEN_LIFETIME_MS
+
+                log.info("Successfully authenticated and cached tokens")
+                return [ticket: cachedTicket, csrfToken: cachedCSRFToken]
             } else {
                 throw new RuntimeException("Authentication failed: No ticket received")
             }
         } catch (Exception e) {
             log.error("Authentication failed: ${e.message}", e)
+            clearAuthCache()
             throw new RuntimeException("Proxmox authentication failed: ${e.message}")
         }
     }
 
+    private void clearAuthCache() {
+        cachedTicket = null
+        cachedCSRFToken = null
+        tokenExpiry = 0
+    }
+
     private Map getAuthToken() {
-        if (tokenCache?.ticket && tokenCache.expiresAt > System.currentTimeMillis()) {
-            return tokenCache
-        }
-        tokenCache = authenticate()
-        return tokenCache
+        return authenticate()
     }
     
     /**
@@ -124,6 +217,7 @@ class ProxmoxApiClient {
         def auth = getAuthToken()
 
         def path = "/api2/json${endpoint}"
+        def url = "${cloud.serviceUrl}${path}"
         def headers = [
             'Cookie': "PVEAuthCookie=${auth.ticket}",
             'CSRFPreventionToken': auth.csrfToken
@@ -137,7 +231,7 @@ class ProxmoxApiClient {
         
         try {
             log.debug("Making ${method} call to: ${endpoint}")
-            return makeHttpCall(path, method, headers, body)
+            return makeHttpCall(url, method, headers, body)
         } catch (Exception e) {
             log.error("API call failed for ${endpoint}: ${e.message}", e)
             throw e
@@ -481,6 +575,92 @@ class ProxmoxApiClient {
     private def handleApiError(Exception e, String operation) {
         log.error("${operation} failed: ${e.message}", e)
         throw new RuntimeException("${operation} failed: ${e.message}")
+    }
+
+    /**
+     * Extract host key used for pooling
+     */
+    private String extractHostKey(String url) {
+        def uri = new URI(url)
+        return "${uri.scheme}://${uri.host}:${uri.port}"
+    }
+
+    private ConnectionPool getOrCreateConnectionPool(String hostKey) {
+        connectionPools.computeIfAbsent(hostKey) { key ->
+            new ConnectionPool(key)
+        }
+    }
+
+    private HttpConnection createNewConnection(String url, Map headers) {
+        return new HttpConnection(url, headers as Map<String,String>, cloud.ignoreSsl ?: false)
+    }
+
+    private def executeRequest(HttpConnection connection, String method, String body) {
+        def opts = [
+                headers : connection.headers,
+                ignoreSSL: connection.ignoreSSL,
+                timeout  : CONNECTION_TIMEOUT_MS
+        ]
+        if(body)
+            opts.body = body
+
+        connection.lastUsed = System.currentTimeMillis()
+        def uri = new URI(connection.url)
+        return connection.client.callJsonApi(
+                "${uri.scheme}://${uri.host}:${uri.port}",
+                uri.path + (uri.query ? "?${uri.query}" : ""),
+                null,
+                null,
+                new HttpApiClient.RequestOptions(opts),
+                method
+        )
+    }
+
+    private def processResponse(result) {
+        if(result?.success) {
+            if(result.content) {
+                def slurper = new JsonSlurper()
+                return slurper.parseText(result.content)
+            }
+            return result.data ?: [:]
+        } else {
+            throw new RuntimeException("HTTP call failed: ${result?.errorMessage ?: result?.error}")
+        }
+    }
+
+    // Cleanup method for idle connections
+    static void cleanupIdleConnections() {
+        def now = System.currentTimeMillis()
+        connectionPools.entrySet().removeIf { entry ->
+            def pool = entry.value
+            def idleTime = now - pool.lastUsed
+            if(idleTime > IDLE_TIMEOUT_MS) {
+                pool.cleanup()
+                return true
+            }
+            pool.cleanupIdleConnections()
+            return false
+        }
+    }
+
+    def getConnectionStats() {
+        def stats = [:]
+        connectionPools.each { hostKey, pool ->
+            stats[hostKey] = [
+                    availableConnections: pool.availableConnections.size(),
+                    activeConnections   : pool.activeConnections.size(),
+                    lastUsed            : pool.lastUsed
+            ]
+        }
+        return stats
+    }
+
+    def closeAllConnections() {
+        connectionPools.each { hostKey, pool ->
+            pool.cleanup()
+        }
+        connectionPools.clear()
+        clearAuthCache()
     }
     
     /**
