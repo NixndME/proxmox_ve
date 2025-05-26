@@ -187,6 +187,13 @@ class ProxmoxApiComputeUtil {
             )
 
             log.debug("VM Delete Response Details: ${results.toMap()}")
+            if(results?.statusCode < 200 || results?.statusCode >= 300) {
+                def rtn = results instanceof ServiceResponse ? results : new ServiceResponse(success:false)
+                rtn.success = false
+                rtn.msg = "Destroy VM failed with status ${results?.statusCode}"
+                log.error("Destroy VM request failed - status ${results?.statusCode}")
+                return rtn
+            }
             return results
 
         //TODO - check for non 200 response
