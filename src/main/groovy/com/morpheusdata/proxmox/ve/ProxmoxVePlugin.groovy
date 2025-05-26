@@ -18,6 +18,7 @@ package com.morpheusdata.proxmox.ve
 import com.morpheusdata.core.Plugin
 import com.morpheusdata.model.Cloud
 import com.morpheusdata.model.AccountCredential
+import com.morpheusdata.proxmox.ve.ProxmoxBackupProvider
 import groovy.util.logging.Slf4j
 import java.util.concurrent.Executors
 import java.util.concurrent.ScheduledExecutorService
@@ -42,6 +43,7 @@ class ProxmoxVePlugin extends Plugin {
         this.registerProvider(new ProxmoxVeProvisionProvider(this, this.morpheus))
         this.registerProvider(new ProxmoxVeOptionSourceProvider(this, this.morpheus))
         this.registerProvider(new ProxmoxVeVirtualImageDatasetProvider(this, this.morpheus))
+        this.registerProvider(new ProxmoxBackupProvider(this, this.morpheus))
         def networkProvider = new ProxmoxNetworkProvider(this, this.morpheus)
         this.registerProvider(networkProvider)
         networkProviderCode = networkProvider.code

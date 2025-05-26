@@ -159,11 +159,10 @@ class ProxmoxVeCloudProvider implements CloudProvider {
 	 * Grabs available backup providers related to the target Cloud Plugin.
 	 * @return Collection of BackupProvider
 	 */
-	@Override
-	Collection<BackupProvider> getAvailableBackupProviders() {
-		Collection<BackupProvider> providers = []
-		return providers
-	}
+        @Override
+        Collection<BackupProvider> getAvailableBackupProviders() {
+                return this.@plugin.getProvidersByType(BackupProvider) as Collection<BackupProvider>
+        }
 
 	/**
 	 * Provides a Collection of {@link NetworkType} related to this CloudProvider
