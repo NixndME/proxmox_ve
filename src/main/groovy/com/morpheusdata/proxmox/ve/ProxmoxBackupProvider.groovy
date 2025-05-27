@@ -2,6 +2,8 @@ package com.morpheusdata.proxmox.ve
 
 import com.morpheusdata.core.MorpheusContext
 import com.morpheusdata.core.Plugin
+import com.morpheusdata.core.backup.BackupProvider
+import com.morpheusdata.core.backup.AbstractBackupProvider
 import com.morpheusdata.model.OptionType
 import com.morpheusdata.model.Backup
 import com.morpheusdata.model.BackupJob
@@ -12,7 +14,7 @@ import com.morpheusdata.response.ServiceResponse
 import groovy.util.logging.Slf4j
 
 @Slf4j
-class ProxmoxBackupProvider implements BackupProvider {
+class ProxmoxBackupProvider extends AbstractBackupProvider implements BackupProvider {
 
     public static final String PROVIDER_CODE = 'proxmox-ve-backup'
 
