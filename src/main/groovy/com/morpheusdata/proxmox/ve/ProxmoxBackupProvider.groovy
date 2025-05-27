@@ -2,27 +2,30 @@ package com.morpheusdata.proxmox.ve
 
 import com.morpheusdata.core.MorpheusContext
 import com.morpheusdata.core.Plugin
-import com.morpheusdata.core.backup.BackupProvider
 import com.morpheusdata.core.backup.AbstractBackupProvider
+import com.morpheusdata.core.backup.BackupJobProvider
+import com.morpheusdata.model.Icon
 import com.morpheusdata.model.OptionType
 import com.morpheusdata.model.Backup
 import com.morpheusdata.model.BackupJob
 import com.morpheusdata.model.BackupResult
 import com.morpheusdata.model.BackupRestore
+import com.morpheusdata.model.BackupProvider as BackupProviderModel
 import com.morpheusdata.model.ComputeServer
 import com.morpheusdata.response.ServiceResponse
 import groovy.util.logging.Slf4j
 
 @Slf4j
-class ProxmoxBackupProvider extends AbstractBackupProvider implements BackupProvider {
+class ProxmoxBackupProvider extends AbstractBackupProvider {
 
     public static final String PROVIDER_CODE = 'proxmox-ve-backup'
 
     protected MorpheusContext morpheusContext
     protected ProxmoxVePlugin plugin
 
-    ProxmoxBackupProvider(Plugin plugin, MorpheusContext morpheusContext) {
-        this.plugin = (ProxmoxVePlugin) plugin
+    ProxmoxBackupProvider(ProxmoxVePlugin plugin, MorpheusContext morpheusContext) {
+        super()
+        this.plugin = plugin
         this.morpheusContext = morpheusContext
     }
 
@@ -39,6 +42,63 @@ class ProxmoxBackupProvider extends AbstractBackupProvider implements BackupProv
     @Override
     Collection<OptionType> getOptionTypes() {
         return []
+    }
+
+    @Override
+    Icon getIcon() {
+        return new Icon(path: 'proxmox.svg', darkPath: 'proxmox-dark.svg')
+    }
+
+    @Override
+    Collection<OptionType> getReplicationGroupOptionTypes() {
+        return []
+    }
+
+    @Override
+    Collection<OptionType> getReplicationOptionTypes() {
+        return []
+    }
+
+    @Override
+    Collection<OptionType> getBackupJobOptionTypes() {
+        return []
+    }
+
+    @Override
+    Collection<OptionType> getBackupOptionTypes() {
+        return []
+    }
+
+    @Override
+    Collection<OptionType> getInstanceReplicationGroupOptionTypes() {
+        return []
+    }
+
+    @Override
+    ServiceResponse deleteBackupProvider(BackupProviderModel backupProvider, Map opts) {
+        try {
+            log.info("Deleting backup provider: ${backupProvider.name}")
+            return ServiceResponse.success()
+        } catch (Exception e) {
+            log.error("Failed to delete backup provider: ${e.message}", e)
+            return ServiceResponse.error("Failed to delete backup provider: ${e.message}")
+        }
+    }
+
+    @Override
+    ServiceResponse refresh(BackupProviderModel backupProvider) {
+        try {
+            log.info("Refreshing backup provider: ${backupProvider.name}")
+            return ServiceResponse.success()
+        } catch (Exception e) {
+            log.error("Failed to refresh backup provider: ${e.message}", e)
+            return ServiceResponse.error("Failed to refresh backup provider: ${e.message}")
+        }
+    }
+
+    @Override
+    BackupJobProvider getBackupJobProvider() {
+        return null // Return null if no specific backup job provider is needed
     }
 
     Boolean canBackupServer(ComputeServer server) {
