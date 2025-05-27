@@ -1,6 +1,5 @@
 package com.morpheusdata.proxmox.ve
 
-import com.morpheusdata.core.backup.BackupProvider
 import com.morpheusdata.core.MorpheusContext
 import com.morpheusdata.core.Plugin
 import com.morpheusdata.model.OptionType
@@ -40,7 +39,6 @@ class ProxmoxBackupProvider implements BackupProvider {
         return []
     }
 
-    @Override
     Boolean canBackupServer(ComputeServer server) {
         return true
     }
@@ -55,12 +53,10 @@ class ProxmoxBackupProvider implements BackupProvider {
         return 'Proxmox VE Backup'
     }
 
-    @Override
     String getDescription() {
         return 'Native Proxmox VE backup and snapshot management'
     }
 
-    @Override
     ServiceResponse configureBackup(BackupJob backupJob, Map config, Map opts) {
         try {
             log.info("Configuring backup job: ${backupJob.name}")
@@ -81,7 +77,6 @@ class ProxmoxBackupProvider implements BackupProvider {
         }
     }
 
-    @Override
     ServiceResponse executeBackup(BackupJob backupJob, Map opts) {
         try {
             log.info("Executing backup job: ${backupJob.name}")
@@ -100,7 +95,6 @@ class ProxmoxBackupProvider implements BackupProvider {
         }
     }
 
-    @Override
     ServiceResponse deleteBackup(Backup backup, Map opts) {
         try {
             log.info("Deleting backup: ${backup.name}")
@@ -128,7 +122,6 @@ class ProxmoxBackupProvider implements BackupProvider {
         }
     }
 
-    @Override
     ServiceResponse restoreBackup(BackupRestore backupRestore, Map opts) {
         try {
             log.info("Restoring backup: ${backupRestore.backup.name}")
