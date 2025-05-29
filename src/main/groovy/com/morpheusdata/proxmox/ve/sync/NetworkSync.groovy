@@ -33,7 +33,6 @@ class NetworkSync {
 
     def execute() {
         try {
-
             log.debug "BEGIN: execute NetworkSync: ${cloud.id}"
 
             def cloudItems = ProxmoxApiComputeUtil.listProxmoxNetworks(apiClient, authConfig)
@@ -65,22 +64,24 @@ class NetworkSync {
 
 
     private addMissingNetworks(Cloud cloud, Collection addList) {
-        log.debug "addMissingNetworks: ${cloud} ${addList.size()}"
-        def networkType = morpheusContext.async.network.type.list(new DataQuery().withFilter('code', 'proxmox-ve-bridge-network')).blockingFirst()
-        def networks = []
+        log.debug "addMissingNetworks: ${cloud.name} ${addList?.size()}"
+        
         try {
+            def networkType = morpheusContext.async.network.type.list(new DataQuery().withFilter('code', 'proxmox-ve-bridge-network')).blockingFirst()
+            def networks = []
+            
             for(cloudItem in addList) {
                 log.debug("Adding Network: $cloudItem")
                 networks << new Network(
                         externalId   : cloudItem.iface,
                         name         : cloudItem.iface,
                         cloud        : cloud,
-                        displayName  : cloudItem.name,
+                        displayName  : cloudItem.name ?: cloudItem.iface,
                         description  : cloudItem.networkAddress,
                         cidr         : cloudItem.networkAddress,
-                        status       : cloudItem.active,
+                        status       : cloudItem.active ?: true,
                         code         : "proxmox.network.${cloudItem.iface}",
-                        typeCode     : networkType.code,
+                        typeCode     : networkType?.code,
                         type         : networkType,
                         owner        : cloud.account,
                         tenantName   : cloud.account.name,
@@ -91,16 +92,16 @@ class NetworkSync {
                         gateway      : cloudItem.gateway,
                         dnsPrimary   : cloudItem.gateway,
                         dnsSecondary : "8.8.8.8",
-                        dhcpServer   : true,
-
-
+                        dhcpServer   : true
                 )
             }
-            log.debug("Saving ${networks.size()} Networks")
-            if (!morpheusContext.async.network.bulkCreate(networks).blockingGet()){
-                log.error "Error saving new networks!"
+            
+            if (networks) {
+                log.debug("Saving ${networks.size()} Networks")
+                if (!morpheusContext.async.network.bulkCreate(networks).blockingGet()){
+                    log.error "Error saving new networks!"
+                }
             }
-
         } catch(e) {
             log.error "Error in creating networks: ${e}", e
         }
@@ -108,22 +109,80 @@ class NetworkSync {
 
 
     private updateMatchedNetworks(List<SyncTask.UpdateItem<Network, Map>> updateItems) {
-        for (def updateItem in updateItems) {
-            def existingItem = updateItem.existingItem
-            def cloudItem = updateItem.masterItem
+        log.debug "updateMatchedNetworks: ${cloud.name} ${updateItems?.size()}"
+        
+        try {
+            def saveList = []
+            
+            for (def updateItem in updateItems) {
+                def existingItem = updateItem.existingItem
+                def cloudItem = updateItem.masterItem
+                def doUpdate = false
 
-            //Add update logic here...
-            //updateMachineMetrics()
+                // Update status/active state
+                def isActive = cloudItem.active != null ? cloudItem.active : true
+                if (existingItem.status != isActive) {
+                    log.debug("Updating status for ${existingItem.name}: ${existingItem.status} -> ${isActive}")
+                    existingItem.status = isActive
+                    doUpdate = true
+                }
+                
+                // Update gateway
+                if (cloudItem.gateway && existingItem.gateway != cloudItem.gateway) {
+                    log.debug("Updating gateway for ${existingItem.name}: ${existingItem.gateway} -> ${cloudItem.gateway}")
+                    existingItem.gateway = cloudItem.gateway
+                    existingItem.dnsPrimary = cloudItem.gateway
+                    doUpdate = true
+                }
+                
+                // Update display name
+                def displayName = cloudItem.name ?: cloudItem.iface
+                if (existingItem.displayName != displayName) {
+                    log.debug("Updating displayName for ${existingItem.name}: ${existingItem.displayName} -> ${displayName}")
+                    existingItem.displayName = displayName
+                    doUpdate = true
+                }
+                
+                // Update description and CIDR
+                if (cloudItem.networkAddress && existingItem.description != cloudItem.networkAddress) {
+                    log.debug("Updating networkAddress for ${existingItem.name}: ${existingItem.description} -> ${cloudItem.networkAddress}")
+                    existingItem.description = cloudItem.networkAddress
+                    existingItem.cidr = cloudItem.networkAddress
+                    doUpdate = true
+                }
+                
+                // Update name if it has changed
+                if (existingItem.name != cloudItem.iface) {
+                    log.debug("Updating name for ${existingItem.name}: ${existingItem.name} -> ${cloudItem.iface}")
+                    existingItem.name = cloudItem.iface
+                    doUpdate = true
+                }
+                
+                if (doUpdate) {
+                    saveList << existingItem
+                }
+            }
+            
+            if (saveList) {
+                log.debug "Saving ${saveList.size()} updated networks"
+                morpheusContext.async.network.save(saveList).blockingGet()
+            }
+        } catch(e) {
+            log.error "Error in updateMatchedNetworks: ${e}", e
         }
-
-        //Example:
-        // Nutanix - https://github.com/gomorpheus/morpheus-nutanix-prism-plugin/blob/master/src/main/groovy/com/morpheusdata/nutanix/prism/plugin/sync/NetworksSync.groovy
-        // Openstack - https://github.com/gomorpheus/morpheus-openstack-plugin/blob/main/src/main/groovy/com/morpheusdata/openstack/plugin/sync/NetworksSync.groovy
     }
 
 
     private removeMissingNetworks(List<NetworkIdentityProjection> removeItems) {
-        log.info("Remove Networks...")
-        morpheusContext.async.network.bulkRemove(removeItems).blockingGet()
+        log.debug "removeMissingNetworks: ${cloud.name} ${removeItems?.size()}"
+        
+        try {
+            if (removeItems) {
+                log.info("Remove Networks: ${removeItems.size()}")
+                morpheusContext.async.network.bulkRemove(removeItems).blockingGet()
+            }
+        } catch(e) {
+            log.error "Error in removeMissingNetworks: ${e}", e
+        }
     }
 }

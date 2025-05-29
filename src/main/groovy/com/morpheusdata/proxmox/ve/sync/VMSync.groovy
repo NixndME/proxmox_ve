@@ -49,7 +49,6 @@ class VMSync {
 
             SyncTask<ComputeServerIdentityProjection, Map, ComputeServer> syncTask = new SyncTask<>(domainRecords, cloudItems)
             syncTask.addMatchFunction { ComputeServerIdentityProjection domainObject, Map cloudItem ->
-
                 domainObject.externalId == cloudItem.vmid.toString()
             }.onAdd { itemsToAdd ->
                 addMissingVirtualMachines(cloud, itemsToAdd)
@@ -71,93 +70,185 @@ class VMSync {
 
 
     private void addMissingVirtualMachines(Cloud cloud, Collection items) {
-        log.info("Adding ${items.size()} new VMs for Proxmox cloud ${cloud.name}")
+        log.info("Adding ${items?.size()} new VMs for Proxmox cloud ${cloud.name}")
 
-        def newVMs = []
+        try {
+            def newVMs = []
 
-        def hostIdentitiesMap = context.async.computeServer.listIdentityProjections(cloud.id, null).filter {
-            it.computeServerTypeCode == 'proxmox-qemu-vm'
-        }.toMap {it.externalId }.blockingGet()
+            // ✅ FIXED: Look for hosts (proxmox-ve-node) not VMs (proxmox-qemu-vm)
+            def hostIdentitiesMap = context.async.computeServer.listIdentityProjections(cloud.id, null).filter {
+                it.computeServerTypeCode == 'proxmox-ve-node'  // Correct host type
+            }.toMap {it.externalId }.blockingGet()
 
-        def computeServerType = cloudProvider.computeServerTypes.find {
-            it.code == 'proxmox-qemu-vm-unmanaged'
+            def computeServerType = cloudProvider.computeServerTypes.find {
+                it.code == 'proxmox-qemu-vm-unmanaged'
+            }
+
+            if (!computeServerType) {
+                log.error "ComputeServerType 'proxmox-qemu-vm-unmanaged' not found!"
+                return
+            }
+
+            items.each { Map cloudItem ->
+                try {
+                    log.debug("Adding VM: $cloudItem")
+                    def newVM = new ComputeServer(
+                        account          : cloud.account,
+                        externalId       : cloudItem.vmid.toString(),        // ✅ FIXED: Convert to string
+                        name             : cloudItem.name,
+                        externalIp       : cloudItem.ip,
+                        internalIp       : cloudItem.ip,
+                        sshHost          : cloudItem.ip,
+                        sshUsername      : 'root',
+                        provision        : false,
+                        cloud            : cloud,
+                        lvmEnabled       : false,
+                        managed          : false,
+                        serverType       : 'vm',
+                        status           : 'provisioned',
+                        uniqueId         : cloudItem.vmid.toString(),        // ✅ FIXED: Convert to string
+                        powerState       : cloudItem.status == 'running' ? ComputeServer.PowerState.on : ComputeServer.PowerState.off,
+                        maxMemory        : cloudItem.maxmem?.toLong(),
+                        maxCores         : cloudItem.maxcpu?.toLong(),
+                        coresPerSocket   : cloudItem.maxcpu?.toLong(),
+                        parentServer     : hostIdentitiesMap[cloudItem.node],
+                        osType           : 'unknown',
+                        serverOs         : new OsType(code: 'unknown'),
+                        category         : "proxmox.ve.vm.${cloud.id}",
+                        computeServerType: computeServerType
+                    )
+                    newVMs << newVM
+                } catch(e) {
+                    log.error "Error preparing VM ${cloudItem.vmid}: ${e}", e
+                }
+            }
+            
+            if (newVMs) {
+                log.debug("Creating ${newVMs.size()} VMs in batch")
+                def createdVMs = context.async.computeServer.bulkCreate(newVMs).blockingGet()
+                
+                if (createdVMs) {
+                    log.info("Successfully created ${newVMs.size()} VMs")
+                    
+                    // Update metrics for each VM after creation
+                    newVMs.eachWithIndex { vm, index ->
+                        def cloudItem = items[index]
+                        updateMachineMetrics(
+                                vm,
+                                cloudItem.maxcpu?.toLong(),
+                                cloudItem.maxdisk?.toLong(),
+                                cloudItem.disk?.toLong(),
+                                cloudItem.maxmem?.toLong(),
+                                cloudItem.mem?.toLong(),
+                                cloudItem.maxcpu?.toLong(),
+                                (cloudItem.status == 'running') ? ComputeServer.PowerState.on : ComputeServer.PowerState.off
+                        )
+                    }
+                } else {
+                    log.error "Error in bulk creating VMs"
+                }
+            }
+        } catch(e) {
+            log.error "Error in addMissingVirtualMachines: ${e}", e
         }
-
-        items.each { Map cloudItem ->
-            def newVM = new ComputeServer(
-                account          : cloud.account,
-                externalId       : cloudItem.vmid,
-                name             : cloudItem.name,
-                externalIp       : cloudItem.ip,
-                internalIp       : cloudItem.ip,
-                sshHost          : cloudItem.ip,
-                sshUsername      : 'root',
-                provision        : false,
-                cloud            : cloud,
-                lvmEnabled       : false,
-                managed          : false,
-                serverType       : 'vm',
-                status           : 'provisioned',
-                uniqueId         : cloudItem.vmid,
-                powerState       : cloudItem.status == 'running' ? ComputeServer.PowerState.on : ComputeServer.PowerState.off,
-                maxMemory        : cloudItem.maxmem,
-                maxCores         : cloudItem.maxCores,
-                coresPerSocket   : cloudItem.coresPerSocket,
-                parentServer     : hostIdentitiesMap[cloudItem.node],
-                osType           :'unknown',
-                serverOs         : new OsType(code: 'unknown'),
-                category         : "proxmox.ve.vm.${cloud.id}",
-                computeServerType: computeServerType
-            )
-            newVMs << newVM
-        }
-        context.async.computeServer.bulkCreate(newVMs).blockingGet()
     }
 
 
     private updateMatchingVMs(List<SyncTask.UpdateItem<ComputeServer, Map>> updateItems) {
-        for (def updateItem in updateItems) {
-            def existingItem = updateItem.existingItem
-            def cloudItem = updateItem.masterItem
-            def doUpdate = false
+        log.debug("Updating ${updateItems?.size()} VMs...")
+        
+        try {
+            def saveList = []
+            
+            for (def updateItem in updateItems) {
+                def existingItem = updateItem.existingItem
+                def cloudItem = updateItem.masterItem
+                def doUpdate = false
 
-            if (cloudItem.hostname != existingItem.hostname) {
-                existingItem.hostname = cloudItem.hostname
-                doUpdate = true
+                // ✅ FIXED: Use correct field mappings
+                // Update name
+                if (cloudItem.name && cloudItem.name != existingItem.name) {
+                    log.debug("Updating name for VM ${existingItem.externalId}: ${existingItem.name} -> ${cloudItem.name}")
+                    existingItem.name = cloudItem.name
+                    doUpdate = true
+                }
+
+                // Update external IP
+                if (cloudItem.ip && cloudItem.ip != existingItem.externalIp) {
+                    log.debug("Updating externalIp for VM ${existingItem.externalId}: ${existingItem.externalIp} -> ${cloudItem.ip}")
+                    existingItem.setExternalIp(cloudItem.ip)
+                    existingItem.setInternalIp(cloudItem.ip)
+                    existingItem.sshHost = cloudItem.ip
+                    doUpdate = true
+                }
+
+                // Update power state
+                def newPowerState = (cloudItem.status == 'running') ? ComputeServer.PowerState.on : ComputeServer.PowerState.off
+                if (existingItem.powerState != newPowerState) {
+                    log.debug("Updating powerState for VM ${existingItem.externalId}: ${existingItem.powerState} -> ${newPowerState}")
+                    existingItem.powerState = newPowerState
+                    doUpdate = true
+                }
+
+                // Update resource allocations
+                def maxMemory = cloudItem.maxmem?.toLong()
+                if (maxMemory && existingItem.maxMemory != maxMemory) {
+                    log.debug("Updating maxMemory for VM ${existingItem.externalId}: ${existingItem.maxMemory} -> ${maxMemory}")
+                    existingItem.maxMemory = maxMemory
+                    doUpdate = true
+                }
+
+                def maxCores = cloudItem.maxcpu?.toLong()
+                if (maxCores && existingItem.maxCores != maxCores) {
+                    log.debug("Updating maxCores for VM ${existingItem.externalId}: ${existingItem.maxCores} -> ${maxCores}")
+                    existingItem.maxCores = maxCores
+                    doUpdate = true
+                }
+
+                if (doUpdate) {
+                    saveList << existingItem
+                }
+
+                // Always update machine metrics
+                updateMachineMetrics(
+                        existingItem,
+                        cloudItem.maxcpu?.toLong(),
+                        cloudItem.maxdisk?.toLong(),
+                        cloudItem.disk?.toLong(),
+                        cloudItem.maxmem?.toLong(),
+                        cloudItem.mem?.toLong(),
+                        cloudItem.maxcpu?.toLong(),
+                        newPowerState
+                )
             }
-
-            if (cloudItem.externalIp != existingItem.externalIp) {
-                existingItem.setExternalIp(cloudItem.externalIp)
-                doUpdate = true
+            
+            if (saveList) {
+                log.debug "Saving ${saveList.size()} updated VMs"
+                context.async.computeServer.bulkSave(saveList).blockingGet()
             }
-
-            doUpdate ? context.async.computeServer.bulkSave([existingItem]).blockingGet() : null
-
-            updateMachineMetrics(
-                    existingItem,
-                    cloudItem.maxcpu?.toLong(),
-                    cloudItem.maxdisk?.toLong(),
-                    cloudItem.disk?.toLong(),
-                    cloudItem.maxmem?.toLong(),
-                    cloudItem.mem.toLong(),
-                    cloudItem.maxcpu?.toLong(),
-                    (cloudItem.status == 'online') ? ComputeServer.PowerState.on : ComputeServer.PowerState.off
-            )
+        } catch(e) {
+            log.error "Error in updateMatchingVMs: ${e}", e
         }
-
-        //Example:
-        // Nutanix - https://github.com/gomorpheus/morpheus-nutanix-prism-plugin/blob/master/src/main/groovy/com/morpheusdata/nutanix/prism/plugin/sync/VirtualMachinesSync.groovy
     }
 
 
     private removeMissingVMs(List<ComputeServerIdentityProjection> removeItems) {
-        log.info("Remove ${removeItems.size()} VMs...")
-        context.async.computeServer.bulkRemove(removeItems).blockingGet()
+        log.debug "removeMissingVMs: ${removeItems?.size()}"
+        
+        try {
+            if (removeItems) {
+                log.info("Remove VMs: ${removeItems.size()}")
+                context.async.computeServer.bulkRemove(removeItems).blockingGet()
+            }
+        } catch(e) {
+            log.error "Error in removeMissingVMs: ${e}", e
+        }
     }
 
 
     private updateMachineMetrics(ComputeServer server, Long maxCores, Long maxStorage, Long usedStorage, Long maxMemory, Long usedMemory, Long maxCpu, ComputeServer.PowerState status) {
-        log.debug "updateMachineMetrics for ${server}"
+        log.debug "updateMachineMetrics for ${server?.name} (${server?.externalId})"
+        
         try {
             def updates = !server.getComputeCapacityInfo()
             ComputeCapacityInfo capacityInfo = server.getComputeCapacityInfo() ?: new ComputeCapacityInfo()
@@ -198,9 +289,9 @@ class VMSync {
                 updates = true
             }
 
-            def powerState = capacityInfo.maxCpu > 0 ? ComputeServer.PowerState.on : ComputeServer.PowerState.off
-            if(server.powerState != powerState) {
-                server.powerState = powerState
+            // Update power state in capacity info
+            if(server.powerState != status) {
+                server.powerState = status
                 updates = true
             }
 
@@ -209,8 +300,7 @@ class VMSync {
                 context.async.computeServer.bulkSave([server]).blockingGet()
             }
         } catch(e) {
-            log.warn("error updating host stats: ${e}", e)
+            log.warn("error updating VM metrics for ${server?.name} (${server?.externalId}): ${e}", e)
         }
     }
-
 }

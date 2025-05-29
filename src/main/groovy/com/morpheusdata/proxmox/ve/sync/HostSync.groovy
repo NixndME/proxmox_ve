@@ -77,13 +77,17 @@ class HostSync {
 
 
     private addMissingHosts(Cloud cloud, Collection addList) {
-        log.debug "addMissingHosts: ${cloud} ${addList.size()}"
-        def serverType = new ComputeServerType(code: 'proxmox-ve-node')
-        def serverOs = new OsType(code: 'linux')
+        log.debug "addMissingHosts: ${cloud.name} ${addList?.size()}"
+        
+        try {
+            def serverType = new ComputeServerType(code: 'proxmox-ve-node')
+            def serverOs = new OsType(code: 'linux')
+            def serversToAdd = []
+            def cloudItemList = []
 
-        for(cloudItem in addList) {
-            try {
-                log.debug("Adding cloud host: $cloudItem")
+            // Collect all servers first
+            for(cloudItem in addList) {
+                log.debug("Preparing cloud host: $cloudItem")
                 def serverConfig = [
                         account          : cloud.owner,
                         category         : "proxmox.ve.host.${cloud.id}",
@@ -104,75 +108,118 @@ class HostSync {
                 ]
 
                 ComputeServer newServer = new ComputeServer(serverConfig)
-                log.debug("Adding Compute Server: $serverConfig")
-                if (!morpheusContext.async.computeServer.bulkCreate([newServer]).blockingGet()){
-                    log.error "Error in creating host server ${newServer}"
-                }
-
-                updateMachineMetrics(
-                        newServer,
-                        cloudItem.maxcpu?.toLong(),
-                        cloudItem.maxdisk?.toLong(),
-                        cloudItem.disk?.toLong(),
-                        cloudItem.maxmem?.toLong(),
-                        cloudItem.mem.toLong(),
-                        cloudItem.maxcpu?.toLong(),
-                        (cloudItem.status == 'online') ? ComputeServer.PowerState.on : ComputeServer.PowerState.off
-                )
-            } catch(e) {
-                log.error "Error in creating host: ${e}", e
+                serversToAdd << newServer
+                cloudItemList << cloudItem
             }
+            
+            // Batch create all servers
+            if (serversToAdd) {
+                log.debug("Creating ${serversToAdd.size()} host servers in batch")
+                def createdServers = morpheusContext.async.computeServer.bulkCreate(serversToAdd).blockingGet()
+                
+                if (createdServers) {
+                    log.debug("Successfully created ${serversToAdd.size()} host servers")
+                    
+                    // Update metrics for each server after creation
+                    serversToAdd.eachWithIndex { server, index ->
+                        def cloudItem = cloudItemList[index]
+                        updateMachineMetrics(
+                                server,
+                                cloudItem.maxcpu?.toLong(),
+                                cloudItem.maxdisk?.toLong(),
+                                cloudItem.disk?.toLong(),
+                                cloudItem.maxmem?.toLong(),
+                                cloudItem.mem?.toLong(),
+                                cloudItem.maxcpu?.toLong(),
+                                (cloudItem.status == 'online') ? ComputeServer.PowerState.on : ComputeServer.PowerState.off
+                        )
+                    }
+                } else {
+                    log.error "Error in bulk creating host servers"
+                }
+            }
+        } catch(e) {
+            log.error "Error in addMissingHosts: ${e}", e
         }
     }
 
 
     private updateMatchedHosts(Cloud cloud, List<SyncTask.UpdateItem<ComputeServer, Map>> updateItems) {
-        log.info("Updating ${updateItems.size()} Hosts...")
+        log.debug("Updating ${updateItems?.size()} Hosts...")
 
-        for(def updateItem in updateItems) {
-            def existingItem = updateItem.existingItem
-            def cloudItem = updateItem.masterItem
-            def doUpdate = false
+        try {
+            def saveList = []
+            
+            for(def updateItem in updateItems) {
+                def existingItem = updateItem.existingItem
+                def cloudItem = updateItem.masterItem
+                def doUpdate = false
 
-            if (cloudItem.hostname != existingItem.hostname) {
-                existingItem.hostname = cloudItem.hostname
-                doUpdate = true
+                // Update hostname
+                if (cloudItem.node && cloudItem.node != existingItem.hostname) {
+                    log.debug("Updating hostname for ${existingItem.name}: ${existingItem.hostname} -> ${cloudItem.node}")
+                    existingItem.hostname = cloudItem.node
+                    doUpdate = true
+                }
+
+                // Update external IP
+                if (cloudItem.ipAddress && cloudItem.ipAddress != existingItem.externalIp) {
+                    log.debug("Updating externalIp for ${existingItem.name}: ${existingItem.externalIp} -> ${cloudItem.ipAddress}")
+                    existingItem.setExternalIp(cloudItem.ipAddress)
+                    doUpdate = true
+                }
+
+                // Update name if different from node
+                if (cloudItem.node && cloudItem.node != existingItem.name) {
+                    log.debug("Updating name for ${existingItem.name}: ${existingItem.name} -> ${cloudItem.node}")
+                    existingItem.name = cloudItem.node
+                    doUpdate = true
+                }
+
+                if (doUpdate) {
+                    saveList << existingItem
+                }
+
+                // Always update machine metrics
+                updateMachineMetrics(
+                        existingItem,
+                        cloudItem.maxcpu?.toLong(),
+                        cloudItem.maxdisk?.toLong(),
+                        cloudItem.disk?.toLong(),
+                        cloudItem.maxmem?.toLong(),
+                        cloudItem.mem?.toLong(),
+                        cloudItem.maxcpu?.toLong(),
+                        (cloudItem.status == 'online') ? ComputeServer.PowerState.on : ComputeServer.PowerState.off
+                )
             }
-
-            if (cloudItem.externalIp != existingItem.externalIp) {
-                existingItem.setExternalIp(cloudItem.externalIp)
-                doUpdate = true
+            
+            if (saveList) {
+                log.debug "Saving ${saveList.size()} updated hosts"
+                morpheusContext.async.computeServer.bulkSave(saveList).blockingGet()
             }
-
-            doUpdate ? morpheusContext.async.computeServer.bulkSave([existingItem]).blockingGet() : null
-
-            updateMachineMetrics(
-                    existingItem,
-                    cloudItem.maxcpu?.toLong(),
-                    cloudItem.maxdisk?.toLong(),
-                    cloudItem.disk?.toLong(),
-                    cloudItem.maxmem?.toLong(),
-                    cloudItem.mem.toLong(),
-                    cloudItem.maxcpu?.toLong(),
-                    (cloudItem.status == 'online') ? ComputeServer.PowerState.on : ComputeServer.PowerState.off
-            )
+        } catch(e) {
+            log.error "Error in updateMatchedHosts: ${e}", e
         }
-
-        //Examples:
-        // Nutanix - https://github.com/gomorpheus/morpheus-nutanix-prism-plugin/blob/api-1.1.x/src/main/groovy/com/morpheusdata/nutanix/prism/plugin/sync/HostsSync.groovy
-        // XCP-ng - https://github.com/gomorpheus/morpheus-xenserver-plugin/blob/main/src/main/groovy/com/morpheusdata/xen/sync/HostSync.groovy
-        // Openstack - https://github.com/gomorpheus/morpheus-openstack-plugin/blob/main/src/main/groovy/com/morpheusdata/openstack/plugin/sync/HostsSync.groovy
     }
 
 
     private removeMissingHosts(Cloud cloud, List<ComputeServerIdentityProjection> removeList) {
-        log.debug("Remove Hosts...")
-        morpheusContext.async.computeServer.bulkRemove(removeList).blockingGet()
+        log.debug "removeMissingHosts: ${cloud.name} ${removeList?.size()}"
+        
+        try {
+            if (removeList) {
+                log.info("Remove Hosts: ${removeList.size()}")
+                morpheusContext.async.computeServer.bulkRemove(removeList).blockingGet()
+            }
+        } catch(e) {
+            log.error "Error in removeMissingHosts: ${e}", e
+        }
     }
 
 
     private updateMachineMetrics(ComputeServer server, Long maxCores, Long maxStorage, Long usedStorage, Long maxMemory, Long usedMemory, Long maxCpu, ComputeServer.PowerState status) {
-        log.debug "updateMachineMetrics for ${server}"
+        log.debug "updateMachineMetrics for ${server?.name}"
+        
         try {
             def updates = !server.getComputeCapacityInfo()
             ComputeCapacityInfo capacityInfo = server.getComputeCapacityInfo() ?: new ComputeCapacityInfo()
@@ -213,7 +260,8 @@ class HostSync {
                 updates = true
             }
 
-            def powerState = capacityInfo.maxCpu > 0 ? ComputeServer.PowerState.on : ComputeServer.PowerState.off
+            // Determine power state based on status
+            def powerState = (status == ComputeServer.PowerState.on) ? ComputeServer.PowerState.on : ComputeServer.PowerState.off
             if(server.powerState != powerState) {
                 server.powerState = powerState
                 updates = true
@@ -224,7 +272,7 @@ class HostSync {
                 morpheusContext.async.computeServer.bulkSave([server]).blockingGet()
             }
         } catch(e) {
-            log.warn("error updating host stats: ${e}", e)
+            log.warn("error updating host stats for ${server?.name}: ${e}", e)
         }
     }
 }
