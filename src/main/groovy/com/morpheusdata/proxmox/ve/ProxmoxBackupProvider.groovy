@@ -46,7 +46,7 @@ class ProxmoxBackupProvider extends AbstractBackupProvider {
 
     @Override
     Icon getIcon() {
-        return new Icon(path: 'proxmox.svg', darkPath: 'proxmox-dark.svg')
+        return new Icon(path: 'proxmox-full-lockup-color.svg', darkPath: 'proxmox-full-lockup-inverted-color.svg')
     }
 
     @Override
