@@ -689,8 +689,33 @@ class ProxmoxApiClient {
             throw new IllegalArgumentException("Node, storage and filename are required")
         }
         log.info("Uploading ${filename} to storage ${storage} on node ${node} via API")
-        def endpoint = "/nodes/${node}/storage/${storage}/upload"
-        return [success: true, message: "Upload endpoint configured: ${endpoint}"]
+        def auth = getAuthToken()
+        def url = "${cloud.serviceUrl}/api2/json/nodes/${node}/storage/${storage}/upload"
+
+        try {
+            File file = new File(filename)
+            if(!file.exists())
+                throw new FileNotFoundException("File not found: ${filename}")
+
+            def opts = [
+                headers  : [
+                    'Cookie'             : "PVEAuthCookie=${auth.ticket}",
+                    'CSRFPreventionToken': auth.csrfToken
+                ],
+                ignoreSSL: cloud.ignoreSsl ?: false,
+                timeout  : CONNECTION_TIMEOUT_MS,
+                multipart: [
+                    [name:'content', value: contentType],
+                    [name:'filename', filename: file.name, data: file]
+                ]
+            ]
+
+            def result = HTTP_CLIENT.callJsonApi(url, '', null, null,
+                    new HttpApiClient.RequestOptions(opts), 'POST')
+            return processResponse(result)
+        } catch(Exception e) {
+            handleApiError(e, 'uploadImageToStorage')
+        }
     }
 
     def createDiskFromTemplate(String node, String vmId, String templateId, String storage) {
