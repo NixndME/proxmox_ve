@@ -383,7 +383,7 @@ class ProxmoxApiComputeUtil {
     static ServiceResponse listProxmoxDatastores(HttpApiClient client, Map authConfig) {
         log.debug("listProxmoxDatastores...")
 
-        var allowedDatastores = ["rbd", "cifs", "zfspool", "nfs", "lvmthin", "lvm"]
+        def allowedDatastores = ["rbd", "cifs", "zfspool", "nfs", "lvmthin", "lvm"]
 
         ServiceResponse datastoreResults = callListApiV2(client, "storage", authConfig)
         List<Map> validDatastores = []
