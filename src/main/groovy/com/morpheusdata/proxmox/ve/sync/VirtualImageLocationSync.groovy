@@ -299,10 +299,10 @@ class VirtualImageLocationSync {
         }
         log.info("Removing Locations: $removeList")
         context.async.virtualImage.location.bulkRemove(removeList).blockingGet()
-        //removeVirtualImages.each {
-            log.info("Removing Virtual Images: $removeVirtualImages")
+        if (removeVirtualImages) {
+            log.info("Removing Virtual Images: ${removeVirtualImages.collect { it.id }}")
             context.async.virtualImage.bulkRemove(removeVirtualImages).blockingGet()
-        //}
+        }
     }
 
 
