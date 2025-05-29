@@ -16,7 +16,6 @@ import com.morpheusdata.model.projection.VirtualImageIdentityProjection
 import groovy.util.logging.Slf4j
 import io.reactivex.rxjava3.core.Observable
 
-
 @Slf4j
 class ProxmoxVeVirtualImageDatasetProvider extends AbstractDatasetProvider<VirtualImage, Long> {
 
@@ -34,7 +33,6 @@ class ProxmoxVeVirtualImageDatasetProvider extends AbstractDatasetProvider<Virtu
         String getCode() {
             return 'proxmox-ve-virtual-image-dataset'
         }
-
 
         String getKey() {
             return providerKey
@@ -55,7 +53,6 @@ class ProxmoxVeVirtualImageDatasetProvider extends AbstractDatasetProvider<Virtu
             return VirtualImage.class
         }
 
-
         @Override
         Observable list(DatasetQuery datasetQuery) {
             DataQuery query = buildQuery(datasetQuery)
@@ -65,7 +62,7 @@ class ProxmoxVeVirtualImageDatasetProvider extends AbstractDatasetProvider<Virtu
         @Override
         Observable<Map> listOptions(DatasetQuery datasetQuery) {
             DataQuery query = buildQuery(datasetQuery)
-            morpheus.async.virtualImage.listIdentityProjections(query).map { VirtualImageIdentityProjection item ->
+            return morpheus.async.virtualImage.listIdentityProjections(query).map { VirtualImageIdentityProjection item ->
                 return [name: item.name, value: item.id]
             }
         }
@@ -107,36 +104,46 @@ class ProxmoxVeVirtualImageDatasetProvider extends AbstractDatasetProvider<Virtu
 
         DataQuery buildQuery(DatasetQuery datasetQuery) {
             Long cloudId = datasetQuery.get("zoneId")?.toLong()
+            Long accountId = datasetQuery.get("accountId")?.toLong()
             Cloud tmpZone = cloudId ? morpheus.services.cloud.get(cloudId) : null
             List<String> supportedImageTypes = getImageTypes()
-            log.info("query parameters: ${datasetQuery.parameters}")
-            /*DataQuery query  = new DatasetQuery().withFilters(
-                    new DataOrFilter(
-                            new DataFilter("visibility", "public"),
-                            new DataFilter("accounts.id", datasetQuery.get("accountId")?.toLong()),
-                            new DataFilter("owner.id", datasetQuery.get("accountId")?.toLong())
-                    ),
-                    new DataFilter("deleted", false),
-                    new DataOrFilter(
-                            new DataFilter("imageType", "in", supportedImageTypes),
-                            new DataFilter("virtualImageType.code", "in", supportedImageTypes),
-                    )
-            )
-*/
-            DataQuery query  = new DatasetQuery().withFilters(
-                    //new DataFilter('refId', cloudId),
-                    new DataFilter('category', 'proxmox.image')
-            )
-/*
-            if(tmpZone) {
-                query = query.withFilters(
-                        new DataOrFilter(
-                                new DataFilter("category", "xenserver.image.${tmpZone.id}"),
-                                new DataFilter("userUploaded", true)
-                        )
-                )
-            }
-*/
+            
+            log.debug("Building query for cloudId: ${cloudId}, accountId: ${accountId}")
+            log.debug("Supported image types: ${supportedImageTypes}")
+
+            // Build comprehensive query to include both synced and user-uploaded images
+            DataQuery query = new DataQuery().withFilters([
+                // Include non-deleted images
+                new DataFilter("deleted", false),
+                
+                // Include images that are either:
+                new DataOrFilter([
+                    // 1. Synced from this Proxmox cloud
+                    tmpZone ? new DataFilter("category", "proxmox.image.${tmpZone.id}") : null,
+                    new DataFilter("category", "proxmox.image"), // Generic proxmox images
+                    
+                    // 2. User uploaded images that are compatible
+                    new DataOrFilter([
+                        new DataFilter("userUploaded", true),
+                        new DataFilter("isPublic", true)
+                    ])
+                ].findAll { it != null }), // Remove null filters
+                
+                // Filter by supported image types if available
+                supportedImageTypes ? new DataOrFilter([
+                    new DataFilter("imageType", "in", supportedImageTypes),
+                    new DataFilter("virtualImageType.code", "in", supportedImageTypes)
+                ]) : null,
+                
+                // Handle account/visibility permissions
+                accountId ? new DataOrFilter([
+                    new DataFilter("visibility", "public"),
+                    new DataFilter("accounts.id", accountId),
+                    new DataFilter("owner.id", accountId)
+                ]) : new DataFilter("visibility", "public")
+                
+            ].findAll { it != null }) // Remove null filters
+            
             return query.withSort("name", DataQuery.SortOrder.asc)
         }
 }
