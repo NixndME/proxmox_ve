@@ -75,7 +75,7 @@ class VMSync {
         try {
             def newVMs = []
 
-            // ✅ FIXED: Look for hosts (proxmox-ve-node) not VMs (proxmox-qemu-vm)
+            
             def hostIdentitiesMap = context.async.computeServer.listIdentityProjections(cloud.id, null).filter {
                 it.computeServerTypeCode == 'proxmox-ve-node'  // Correct host type
             }.toMap {it.externalId }.blockingGet()
@@ -94,7 +94,7 @@ class VMSync {
                     log.debug("Adding VM: $cloudItem")
                     def newVM = new ComputeServer(
                         account          : cloud.account,
-                        externalId       : cloudItem.vmid.toString(),        // ✅ FIXED: Convert to string
+                        externalId       : cloudItem.vmid.toString(),        
                         name             : cloudItem.name,
                         externalIp       : cloudItem.ip,
                         internalIp       : cloudItem.ip,
@@ -106,7 +106,7 @@ class VMSync {
                         managed          : false,
                         serverType       : 'vm',
                         status           : 'provisioned',
-                        uniqueId         : cloudItem.vmid.toString(),        // ✅ FIXED: Convert to string
+                        uniqueId         : cloudItem.vmid.toString(),        
                         powerState       : cloudItem.status == 'running' ? ComputeServer.PowerState.on : ComputeServer.PowerState.off,
                         maxMemory        : cloudItem.maxmem?.toLong(),
                         maxCores         : cloudItem.maxcpu?.toLong(),
@@ -165,15 +165,15 @@ class VMSync {
                 def cloudItem = updateItem.masterItem
                 def doUpdate = false
 
-                // ✅ FIXED: Use correct field mappings
-                // Update name
+                
+                
                 if (cloudItem.name && cloudItem.name != existingItem.name) {
                     log.debug("Updating name for VM ${existingItem.externalId}: ${existingItem.name} -> ${cloudItem.name}")
                     existingItem.name = cloudItem.name
                     doUpdate = true
                 }
 
-                // Update external IP
+                
                 if (cloudItem.ip && cloudItem.ip != existingItem.externalIp) {
                     log.debug("Updating externalIp for VM ${existingItem.externalId}: ${existingItem.externalIp} -> ${cloudItem.ip}")
                     existingItem.setExternalIp(cloudItem.ip)
@@ -182,7 +182,7 @@ class VMSync {
                     doUpdate = true
                 }
 
-                // Update power state
+                
                 def newPowerState = (cloudItem.status == 'running') ? ComputeServer.PowerState.on : ComputeServer.PowerState.off
                 if (existingItem.powerState != newPowerState) {
                     log.debug("Updating powerState for VM ${existingItem.externalId}: ${existingItem.powerState} -> ${newPowerState}")
@@ -190,7 +190,7 @@ class VMSync {
                     doUpdate = true
                 }
 
-                // Update resource allocations
+                
                 def maxMemory = cloudItem.maxmem?.toLong()
                 if (maxMemory && existingItem.maxMemory != maxMemory) {
                     log.debug("Updating maxMemory for VM ${existingItem.externalId}: ${existingItem.maxMemory} -> ${maxMemory}")
