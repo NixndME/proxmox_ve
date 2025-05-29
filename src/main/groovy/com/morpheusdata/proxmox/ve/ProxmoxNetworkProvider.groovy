@@ -27,7 +27,6 @@ class ProxmoxNetworkProvider implements NetworkProvider, CloudInitializationProv
 	final String name = 'Proxmox Network'
 	final String description = 'Proxmox Network Provider'
 
-
         ProxmoxNetworkProvider(ProxmoxVePlugin plugin, MorpheusContext morpheusContext) {
                 this.plugin = plugin
                 this.morpheus = morpheusContext
@@ -38,27 +37,16 @@ class ProxmoxNetworkProvider implements NetworkProvider, CloudInitializationProv
                 return 'proxmox-ve-network'
         }
 
-
         @Override
         String getNetworkServerTypeCode() {
                 return 'proxmox-ve-network'
         }
 
-	/**
-	 * The CloudProvider code that this NetworkProvider should be attached to.
-	 * When this NetworkProvider is registered with Morpheus, all Clouds that match this code will have a
-	 * NetworkServer of this type attached to them. Network actions will then be handled via this provider.
-	 * @return String Code of the Cloud type
-	 */
 	@Override
 	String getCloudProviderCode() {
 		return CLOUD_PROVIDER_CODE
 	}
 
-	/**
-	 * Provides a Collection of NetworkTypes that can be managed by this provider
-	 * @return Collection of NetworkType
-	 */
 	@Override
         Collection<NetworkType> getNetworkTypes() {
                 Collection<NetworkType> networkTypes = []
@@ -101,9 +89,7 @@ class ProxmoxNetworkProvider implements NetworkProvider, CloudInitializationProv
                 ])
 
                 return networkTypes
-
         }
-
 
 	@Override
 	Collection<OptionType> getOptionTypes() {
@@ -117,12 +103,12 @@ class ProxmoxNetworkProvider implements NetworkProvider, CloudInitializationProv
 
 	@Override
 	ServiceResponse initializeProvider(Cloud cloud) {
-		log.info("Initializeing network provider for ${cloud.name}")
+		log.info("Initializing network provider for ${cloud.name}")
 		ServiceResponse rtn = ServiceResponse.prepare()
 		try {
 			NetworkServer networkServer = new NetworkServer(
 				name: cloud.name,
-				type: new NetworkServerType(code:"proxmox-ve.network")
+				type: new NetworkServerType(code: "proxmox-ve-network")
 			)
 			morpheus.integration.registerCloudIntegration(cloud.id, networkServer).blockingGet()
 			rtn.success = true
@@ -139,12 +125,9 @@ class ProxmoxNetworkProvider implements NetworkProvider, CloudInitializationProv
 		log.info("Deleting network provider for ${cloud.name}")
 		ServiceResponse rtn = ServiceResponse.prepare()
 		try {
-			// cleanup is done by type, so we do not need to load the record
-			// NetworkServer networkServer = morpheusContext.services.networkServer.find(new DataQuery().withFilters([new DataFilter('type.code', "amazon"), new DataFilter('zoneId', cloud.id)]))
-			// NetworkServer networkServer = cloud.networkServer // this works too, ha
 			NetworkServer networkServer = new NetworkServer(
 				name: cloud.name,
-				type: new NetworkServerType(code:"proxmox-ve.network")
+				type: new NetworkServerType(code: "proxmox-ve-network")
 			)
 			morpheus.integration.deleteCloudIntegration(cloud.id, networkServer).blockingGet()
 			rtn.success = true
@@ -156,17 +139,15 @@ class ProxmoxNetworkProvider implements NetworkProvider, CloudInitializationProv
 		return rtn
 	}
 
-	/**
-	 * Creates the Network submitted
-	 * @param network Network information
-	 * @param opts additional configuration options
-	 * @return ServiceResponse
-	 */
         @Override
         ServiceResponse createNetwork(Network network, Map opts) {
                 try {
+                        if (!network || !network.cloud) {
+                                return ServiceResponse.error("Invalid network or cloud configuration")
+                        }
+
                         def apiClient = new ProxmoxApiClient(morpheus, network.cloud, plugin)
-                        def targetNode = opts?.targetNode ?: 'pve'
+                        def targetNode = opts?.targetNode ?: getDefaultNode(apiClient)
                         def result
 
                         switch (network.type?.code) {
@@ -249,16 +230,15 @@ class ProxmoxNetworkProvider implements NetworkProvider, CloudInitializationProv
                 return apiClient.createAdvancedBridge(targetNode, network.name, config)
         }
 
-	/**
-	 * Updates the Network submitted
-	 * @param network Network information
-	 * @param opts additional configuration options
-	 * @return ServiceResponse
-	 */
         @Override
         ServiceResponse<Network> updateNetwork(Network network, Map opts) {
                 try {
+                        if (!network || !network.cloud) {
+                                return ServiceResponse.error("Invalid network configuration")
+                        }
+
                         def apiClient = new ProxmoxApiClient(morpheus, network.cloud, plugin)
+                        def targetNode = opts?.targetNode ?: network.configMap?.targetNode ?: getDefaultNode(apiClient)
 
                         def networkConfig = [
                                 iface    : network.name,
@@ -266,7 +246,15 @@ class ProxmoxNetworkProvider implements NetworkProvider, CloudInitializationProv
                                 autostart: 1
                         ]
 
-                        def targetNode = opts?.targetNode ?: network.configMap?.targetNode ?: 'pve'
+                        if (network.cidr) {
+                                networkConfig.address = extractIpFromCidr(network.cidr)
+                                networkConfig.netmask = extractNetmaskFromCidr(network.cidr)
+                        }
+
+                        if (network.gateway) {
+                                networkConfig.gateway = network.gateway
+                        }
+
                         def result = apiClient.callApi("/nodes/${targetNode}/network/${network.externalId}", 'PUT', networkConfig)
 
                         if (result) {
@@ -280,16 +268,16 @@ class ProxmoxNetworkProvider implements NetworkProvider, CloudInitializationProv
                 }
         }
 
-	/**
-	 * Deletes the Network submitted
-	 * @param network Network information
-	 * @return ServiceResponse
-	 */
         @Override
         ServiceResponse deleteNetwork(Network network, Map opts) {
                 try {
+                        if (!network || !network.cloud || !network.externalId) {
+                                return ServiceResponse.error("Invalid network configuration")
+                        }
+
                         def apiClient = new ProxmoxApiClient(morpheus, network.cloud, plugin)
-                        def targetNode = network.configMap?.targetNode ?: 'pve'
+                        def targetNode = network.configMap?.targetNode ?: getDefaultNode(apiClient)
+
                         def result = apiClient.callApi("/nodes/${targetNode}/network/${network.externalId}", 'DELETE')
 
                         if (result) {
@@ -306,13 +294,21 @@ class ProxmoxNetworkProvider implements NetworkProvider, CloudInitializationProv
 	@Override
         ServiceResponse createSubnet(NetworkSubnet subnet, Network network, Map opts) {
                 try {
+                        if (!subnet || !network || !network.cloud) {
+                                return ServiceResponse.error("Invalid subnet or network configuration")
+                        }
+
                         log.info("Creating subnet ${subnet.name} in network ${network.name}")
 
                         def apiClient = new ProxmoxApiClient(morpheus, network.cloud, plugin)
-                        def targetNode = network.configMap?.targetNode ?: 'pve'
+                        def targetNode = network.configMap?.targetNode ?: getDefaultNode(apiClient)
 
                         if (subnet.type?.code == 'proxmox-ve-vlan-subnet') {
                                 def vlanId = subnet.vlanId ?: opts.vlanId
+                                if (!vlanId) {
+                                        return ServiceResponse.error("VLAN ID is required for VLAN subnets")
+                                }
+
                                 def parentInterface = network.externalId
 
                                 def config = [
@@ -330,6 +326,8 @@ class ProxmoxNetworkProvider implements NetworkProvider, CloudInitializationProv
                                         subnet.configMap.targetNode = targetNode
                                         subnet.configMap.parentInterface = parentInterface
                                         return ServiceResponse.success(subnet)
+                                } else {
+                                        return ServiceResponse.error("Failed to create VLAN subnet")
                                 }
                         }
 
@@ -343,14 +341,21 @@ class ProxmoxNetworkProvider implements NetworkProvider, CloudInitializationProv
         @Override
         ServiceResponse updateSubnet(NetworkSubnet subnet, Network network, Map opts) {
                 try {
-                        def apiClient = new ProxmoxApiClient(morpheus, network.cloud, plugin)
-                        def targetNode = subnet.configMap?.targetNode ?: 'pve'
+                        if (!subnet || !network || !network.cloud || !subnet.externalId) {
+                                return ServiceResponse.error("Invalid subnet configuration")
+                        }
 
-                        def config = [
-                                address: subnet.cidr ? extractIpFromCidr(subnet.cidr) : null,
-                                netmask: subnet.cidr ? extractNetmaskFromCidr(subnet.cidr) : null,
-                                gateway: subnet.gateway
-                        ]
+                        def apiClient = new ProxmoxApiClient(morpheus, network.cloud, plugin)
+                        def targetNode = subnet.configMap?.targetNode ?: getDefaultNode(apiClient)
+
+                        def config = [:]
+                        if (subnet.cidr) {
+                                config.address = extractIpFromCidr(subnet.cidr)
+                                config.netmask = extractNetmaskFromCidr(subnet.cidr)
+                        }
+                        if (subnet.gateway) {
+                                config.gateway = subnet.gateway
+                        }
 
                         def result = apiClient.updateVlan(targetNode, subnet.externalId, config)
 
@@ -367,8 +372,25 @@ class ProxmoxNetworkProvider implements NetworkProvider, CloudInitializationProv
 	
 	@Override
 	ServiceResponse deleteSubnet(NetworkSubnet subnet, Network network, Map opts) {
-		log.info("NVR: DELETE SUBNET")
-		return ServiceResponse.success()
+                try {
+                        if (!subnet || !network || !network.cloud || !subnet.externalId) {
+                                return ServiceResponse.error("Invalid subnet configuration")
+                        }
+
+                        def apiClient = new ProxmoxApiClient(morpheus, network.cloud, plugin)
+                        def targetNode = subnet.configMap?.targetNode ?: getDefaultNode(apiClient)
+
+                        def result = apiClient.callApi("/nodes/${targetNode}/network/${subnet.externalId}", 'DELETE')
+
+                        if (result) {
+                                return ServiceResponse.success()
+                        } else {
+                                return ServiceResponse.error("Failed to delete subnet")
+                        }
+                } catch (Exception e) {
+                        log.error("Subnet deletion failed: ${e.message}", e)
+                        return ServiceResponse.error("Subnet deletion failed: ${e.message}")
+                }
 	}
 	
 	@Override
@@ -376,19 +398,53 @@ class ProxmoxNetworkProvider implements NetworkProvider, CloudInitializationProv
 		return []
 	}
 
-
-
 	@Override
 	ServiceResponse<Network> prepareNetwork(Network network, Map opts) {
-		log.info("NVR: PREPARE NETWORK")
+		log.info("Preparing network: ${network.name}")
 		return ServiceResponse.success(network);
 	}
 
-
-	@Override
+        @Override
         ServiceResponse validateNetwork(Network network, Map opts) {
-                log.info("NVR: VALIDATE NETWORK")
-                return ServiceResponse.success();
+                try {
+                        def validation = [:]
+                        def errors = []
+
+                        if (!network.name) {
+                                errors << "Network name is required"
+                        }
+
+                        if (network.type?.code == 'proxmox-ve-vlan-network' && !network.vlanId && !opts.vlanId) {
+                                errors << "VLAN ID is required for VLAN networks"
+                        }
+
+                        if (network.type?.code == 'proxmox-ve-bond-network' && !opts.bondSlaves) {
+                                errors << "Bond slaves are required for bond networks"
+                        }
+
+                        if (network.cidr && !isValidCidr(network.cidr)) {
+                                errors << "Invalid CIDR notation"
+                        }
+
+                        if (errors) {
+                                return ServiceResponse.error("Validation failed", null, [errors: errors])
+                        }
+
+                        return ServiceResponse.success()
+                } catch (Exception e) {
+                        log.error("Network validation failed: ${e.message}", e)
+                        return ServiceResponse.error("Network validation failed: ${e.message}")
+                }
+        }
+
+        private String getDefaultNode(apiClient) {
+                try {
+                        def nodes = apiClient.getClusterNodes()
+                        return nodes?.first()?.node ?: 'pve'
+                } catch (Exception e) {
+                        log.warn("Could not get cluster nodes, using 'pve' as default: ${e.message}")
+                        return 'pve'
+                }
         }
 
         private String extractIpFromCidr(String cidr) {
@@ -403,15 +459,42 @@ class ProxmoxNetworkProvider implements NetworkProvider, CloudInitializationProv
                 def parts = cidr.split('/')
                 if (parts.size() != 2)
                         return null
-                int prefix = parts[1].toInteger()
-                long mask = (0xffffffff << (32 - prefix)) & 0xffffffff
-                return [
-                        (mask >>> 24) & 0xff,
-                        (mask >>> 16) & 0xff,
-                        (mask >>> 8) & 0xff,
-                        mask & 0xff
-                ].join('.')
+                try {
+                        int prefix = parts[1].toInteger()
+                        long mask = (0xffffffff << (32 - prefix)) & 0xffffffff
+                        return [
+                                (mask >>> 24) & 0xff,
+                                (mask >>> 16) & 0xff,
+                                (mask >>> 8) & 0xff,
+                                mask & 0xff
+                        ].join('.')
+                } catch (Exception e) {
+                        log.warn("Invalid CIDR prefix: ${parts[1]}")
+                        return null
+                }
         }
 
-
+        private boolean isValidCidr(String cidr) {
+                try {
+                        def parts = cidr.split('/')
+                        if (parts.size() != 2) return false
+                        
+                        def ip = parts[0]
+                        def prefix = parts[1].toInteger()
+                        
+                        if (prefix < 0 || prefix > 32) return false
+                        
+                        def ipParts = ip.split('\\.')
+                        if (ipParts.size() != 4) return false
+                        
+                        ipParts.each { part ->
+                                int octet = part.toInteger()
+                                if (octet < 0 || octet > 255) return false
+                        }
+                        
+                        return true
+                } catch (Exception e) {
+                        return false
+                }
+        }
 }

@@ -31,11 +31,10 @@ import com.morpheusdata.request.ResizeRequest
 import com.morpheusdata.response.PrepareWorkloadResponse
 import com.morpheusdata.response.ProvisionResponse
 import com.morpheusdata.response.ServiceResponse
-import com.morpheusdata.proxmox.ve.util.ProxmoxApiComputeUtil
 import groovy.util.logging.Slf4j
 
 @Slf4j
-class ProxmoxVeProvisionProvider extends AbstractProvisionProvider implements VmProvisionProvider, WorkloadProvisionProvider, WorkloadProvisionProvider.ResizeFacet { //, ProvisionProvider.BlockDeviceNameFacet {
+class ProxmoxVeProvisionProvider extends AbstractProvisionProvider implements VmProvisionProvider, WorkloadProvisionProvider, WorkloadProvisionProvider.ResizeFacet {
         public static final String PROVISION_PROVIDER_CODE = 'proxmox-ve-provision'
 
 	protected MorpheusContext context
@@ -49,7 +48,7 @@ class ProxmoxVeProvisionProvider extends AbstractProvisionProvider implements Vm
 
 	@Override
 	Boolean canAddVolumes() {
-		return true;
+		return true
 	}
 
 	@Override
@@ -73,65 +72,38 @@ class ProxmoxVeProvisionProvider extends AbstractProvisionProvider implements Vm
 	}
 
 	Boolean createDefaultInstanceType() {
-		return false;
+		return false
 	}
 
-	/**
-	 * This method is called before runWorkload and provides an opportunity to perform action or obtain configuration
-	 * that will be needed in runWorkload. At the end of this method, if deploying a ComputeServer with a VirtualImage,
-	 * the sourceImage on ComputeServer should be determined and saved.
-	 * @param workload the Workload object we intend to provision along with some of the associated data needed to determine
-	 *                 how best to provision the workload
-	 * @param workloadRequest the RunWorkloadRequest object containing the various configurations that may be needed
-	 *                        in running the Workload. This will be passed along into runWorkload
-	 * @param opts additional configuration options that may have been passed during provisioning
-	 * @return Response from API
-	 */
 	@Override
 	ServiceResponse<PrepareWorkloadResponse> prepareWorkload(Workload workload, WorkloadRequest workloadRequest, Map opts) {
 		ServiceResponse<PrepareWorkloadResponse> resp = new ServiceResponse<PrepareWorkloadResponse>(
-			true, // successful
-			'', // no message
-			null, // no errors
-			new PrepareWorkloadResponse(workload:workload) // adding the workload to the response for convenience
+			true,
+			'',
+			null,
+			new PrepareWorkloadResponse(workload:workload)
 		)
 		return resp
 	}
 
-	/**
-	 * Some older clouds have a provision type code that is the exact same as the cloud code. This allows one to set it
-	 * to match and in doing so the provider will be fetched via the cloud providers {@link ProxmoxVeCloudProvider#getDefaultProvisionTypeCode()} method.
-	 * @return code for overriding the ProvisionType record code property
-	 */
 	@Override
 	String getProvisionTypeCode() {
 		return PROVISION_PROVIDER_CODE
 	}
 
-	/**
-	 * Provide an icon to be displayed for ServicePlans, VM detail page, etc.
-	 * where a circular icon is displayed
-	 * @since 0.13.6
-	 * @return Icon
-	 */
        @Override
        Icon getCircularIcon() {
-               // icon filenames located under src/assets/images
                return new Icon(path:'proxmox-logo-stacked-color.svg', darkPath:'proxmox-logo-stacked-inverted-color.svg')
        }
 
-	/**
-	 * Provides a Collection of OptionType inputs that need to be made available to various provisioning Wizards
-	 * @return Collection of OptionTypes
-	 */
 	@Override
 	Collection<OptionType> getOptionTypes() {
 		def options = []
-/*
+
 		options << new OptionType(
 				name: 'skip agent install',
-				code: 'provisionType.nutanixPrism.noAgent',
-				category: 'provisionType.nutanixPrism',
+				code: 'provisionType.proxmox.noAgent',
+				category: 'provisionType.proxmox',
 				inputType: OptionType.InputType.CHECKBOX,
 				fieldName: 'noAgent',
 				fieldContext: 'config',
@@ -149,16 +121,10 @@ class ProxmoxVeProvisionProvider extends AbstractProvisionProvider implements Vm
 				custom:false,
 				fieldClass:null
 		)
-*/
 
 		return options
 	}
 
-	/**
-	 * Provides a Collection of OptionType inputs for configuring node types
-	 * @since 0.9.0
-	 * @return Collection of OptionTypes
-	 */
 	@Override
 	Collection<OptionType> getNodeOptionTypes() {
 		Collection<OptionType> nodeOptions = []
@@ -185,19 +151,11 @@ class ProxmoxVeProvisionProvider extends AbstractProvisionProvider implements Vm
 		return nodeOptions
 	}
 
-	/**
-	 * Provides a Collection of StorageVolumeTypes that are available for root StorageVolumes
-	 * @return Collection of StorageVolumeTypes
-	 */
 	@Override
 	Collection<StorageVolumeType> getRootVolumeStorageTypes() {
 		return this.getStorageVolumeTypes()
 	}
 
-	/**
-	 * Provides a Collection of StorageVolumeTypes that are available for data StorageVolumes
-	 * @return Collection of StorageVolumeTypes
-	 */
 	@Override
 	Collection<StorageVolumeType> getDataVolumeStorageTypes() {
 		return this.getStorageVolumeTypes()
@@ -218,18 +176,9 @@ class ProxmoxVeProvisionProvider extends AbstractProvisionProvider implements Vm
 		return volumeTypes
 	} 
 
-	/**
-	 * Provides a Collection of ${@link ServicePlan} related to this ProvisionProvider that can be seeded in.
-	 * Some clouds do not use this as they may be synced in from the public cloud. This is more of a factor for
-	 * On-Prem clouds that may wish to have some precanned plans provided for it.
-	 * @return Collection of ServicePlan sizes that can be seeded in at plugin startup.
-	 */
 	@Override
 	Collection<ServicePlan> getServicePlans() {
 		Collection<ServicePlan> plans = []
-		//plans << new ServicePlan([code:'proxmox-ve-vm-512', name:'1 vCPU, 512MB Memory', description:'1 vCPU, 512MB Memory', sortOrder:0,
-		//								 maxStorage:10l * 1024l * 1024l * 1024l, maxMemory: 1l * 512l * 1024l * 1024l, maxCores:1,
-		//								 customMaxStorage:true, customMaxDataStorage:true, addVolumes:true])
 
 		plans << new ServicePlan([code:'proxmox-ve-vm-1024', name:'1 vCPU, 1GB Memory', description:'1 vCPU, 1GB Memory', sortOrder:1,
 										 maxStorage: 10l * 1024l * 1024l * 1024l, maxMemory: 1l * 1024l * 1024l * 1024l, maxCores:1,
@@ -239,35 +188,31 @@ class ProxmoxVeProvisionProvider extends AbstractProvisionProvider implements Vm
 								  maxStorage: 20l * 1024l * 1024l * 1024l, maxMemory: 2l * 1024l * 1024l * 1024l, maxCores:1,
 								  customMaxStorage:true, customMaxDataStorage:true, addVolumes:true])
 
-		plans << new ServicePlan([code:'proxmox-ve-vm-2048-2', name:'2 vCPU, 2GB Memory', description:'2 vCPU, 2GB Memory', sortOrder:2,
+		plans << new ServicePlan([code:'proxmox-ve-vm-2048-2', name:'2 vCPU, 2GB Memory', description:'2 vCPU, 2GB Memory', sortOrder:3,
 								  maxStorage: 20l * 1024l * 1024l * 1024l, maxMemory: 2l * 1024l * 1024l * 1024l, maxCores:2,
 								  customMaxStorage:true, customMaxDataStorage:true, addVolumes:true])
 
-		plans << new ServicePlan([code:'proxmox-ve-vm-4096', name:'1 vCPU, 4GB Memory', description:'1 vCPU, 4GB Memory', sortOrder:3,
+		plans << new ServicePlan([code:'proxmox-ve-vm-4096', name:'1 vCPU, 4GB Memory', description:'1 vCPU, 4GB Memory', sortOrder:4,
 								  maxStorage: 40l * 1024l * 1024l * 1024l, maxMemory: 4l * 1024l * 1024l * 1024l, maxCores:1,
 								  customMaxStorage:true, customMaxDataStorage:true, addVolumes:true])
 
-		plans << new ServicePlan([code:'proxmox-ve-vm-4096-24', name:'2 vCPU, 4GB Memory', description:'2 vCPU, 4GB Memory', sortOrder:3,
+		plans << new ServicePlan([code:'proxmox-ve-vm-4096-2', name:'2 vCPU, 4GB Memory', description:'2 vCPU, 4GB Memory', sortOrder:5,
 								  maxStorage: 40l * 1024l * 1024l * 1024l, maxMemory: 4l * 1024l * 1024l * 1024l, maxCores:2,
 								  customMaxStorage:true, customMaxDataStorage:true, addVolumes:true])
 
-		plans << new ServicePlan([code:'proxmox-ve-vm-8192', name:'2 vCPU, 8GB Memory', description:'2 vCPU, 8GB Memory', sortOrder:4,
+		plans << new ServicePlan([code:'proxmox-ve-vm-8192', name:'2 vCPU, 8GB Memory', description:'2 vCPU, 8GB Memory', sortOrder:6,
 								  maxStorage: 80l * 1024l * 1024l * 1024l, maxMemory: 8l * 1024l * 1024l * 1024l, maxCores:2,
 								  customMaxStorage:true, customMaxDataStorage:true, addVolumes:true])
 
-		plans << new ServicePlan([code:'proxmox-ve-vm-8192', name:'2 vCPU, 8GB Memory', description:'2 vCPU, 8GB Memory', sortOrder:4,
-								  maxStorage: 80l * 1024l * 1024l * 1024l, maxMemory: 8l * 1024l * 1024l * 1024l, maxCores:2,
-								  customMaxStorage:true, customMaxDataStorage:true, addVolumes:true])
-
-		plans << new ServicePlan([code:'proxmox-ve-vm-16384', name:'2 vCPU, 16GB Memory', description:'2 vCPU, 16GB Memory', sortOrder:5,
+		plans << new ServicePlan([code:'proxmox-ve-vm-16384', name:'2 vCPU, 16GB Memory', description:'2 vCPU, 16GB Memory', sortOrder:7,
 										 maxStorage: 160l * 1024l * 1024l * 1024l, maxMemory: 16l * 1024l * 1024l * 1024l, maxCores:2,
 										 customMaxStorage:true, customMaxDataStorage:true, addVolumes:true])
 
-		plans << new ServicePlan([code:'proxmox-ve-vm-24576', name:'4 vCPU, 24GB Memory', description:'4 vCPU, 24GB Memory', sortOrder:6,
+		plans << new ServicePlan([code:'proxmox-ve-vm-24576', name:'4 vCPU, 24GB Memory', description:'4 vCPU, 24GB Memory', sortOrder:8,
 										 maxStorage: 240l * 1024l * 1024l * 1024l, maxMemory: 24l * 1024l * 1024l * 1024l, maxCores:4,
 										 customMaxStorage:true, customMaxDataStorage:true, addVolumes:true])
 
-		plans << new ServicePlan([code:'proxmox-ve-vm-32768', name:'4 vCPU, 32GB Memory', description:'4 vCPU, 32GB Memory', sortOrder:7,
+		plans << new ServicePlan([code:'proxmox-ve-vm-32768', name:'4 vCPU, 32GB Memory', description:'4 vCPU, 32GB Memory', sortOrder:9,
 										 maxStorage: 320l * 1024l * 1024l * 1024l, maxMemory: 32l * 1024l * 1024l * 1024l, maxCores:4,
 										 customMaxStorage:true, customMaxDataStorage:true, addVolumes:true])
 
@@ -277,69 +222,71 @@ class ProxmoxVeProvisionProvider extends AbstractProvisionProvider implements Vm
 		return plans
 	}
 
-
-	/**
-	 * Validates the provided provisioning options of a workload. A return of success = false will halt the
-	 * creation and display errors
-	 * @param opts options
-	 * @return Response from API. Errors should be returned in the errors Map with the key being the field name and the error
-	 * message as the value.
-	 */
 	@Override
 	ServiceResponse validateWorkload(Map opts) {
+		def errors = [:]
+		
+		if (!opts.cloud?.id) {
+			errors.cloud = 'Cloud is required'
+		}
+		
+		if (!opts.server?.plan?.maxMemory || opts.server.plan.maxMemory < 512 * 1024 * 1024) {
+			errors.memory = 'Minimum 512MB memory required'
+		}
+		
+		if (!opts.server?.plan?.maxCores || opts.server.plan.maxCores < 1) {
+			errors.cores = 'Minimum 1 CPU core required'
+		}
+		
+		if (errors) {
+			return ServiceResponse.error('Validation failed', null, [errors: errors])
+		}
+		
 		return ServiceResponse.success()
 	}
 
-	/**
-	 * This method is a key entry point in provisioning a workload. This could be a vm, a container, or something else.
-	 * Information associated with the passed Workload object is used to kick off the workload provision request
-	 * @param workload the Workload object we intend to provision along with some of the associated data needed to determine
-	 *                 how best to provision the workload
-	 * @param workloadRequest the RunWorkloadRequest object containing the various configurations that may be needed
-	 *                        in running the Workload
-	 * @param opts additional configuration options that may have been passed during provisioning
-	 * @return Response from API
-	 */
 	@Override
         ServiceResponse<ProvisionResponse> runWorkload(Workload workload, WorkloadRequest workloadRequest, Map opts) {
-               log.info("Starting VM provisioning via Proxmox API (SSH-free)")
+               log.info("Starting VM provisioning via Proxmox API")
 
                try {
-                       // Get API client - no SSH credentials needed
+                       if (!workloadRequest?.cloud) {
+                               return ServiceResponse.error("Cloud configuration is required")
+                       }
+
                        def apiClient = new ProxmoxApiClient(context, workloadRequest.cloud, plugin)
 
-                       // Test connectivity first
                        def connectionTest = apiClient.testConnection()
                        if (!connectionTest.success) {
                                return ServiceResponse.error("Cannot connect to Proxmox: ${connectionTest.error}")
                        }
 
-                       // Build VM configuration
-                       def vmConfig = buildVmConfiguration(workloadRequest)
-                       def targetNode = selectTargetNode(workloadRequest)
+                       def vmConfig = buildVmConfiguration(workloadRequest, opts)
+                       def targetNode = selectTargetNode(workloadRequest, apiClient)
 
-                       // Create VM via API
-                       log.info("Creating VM via Proxmox API")
+                       log.info("Creating VM on node ${targetNode} with config: ${vmConfig}")
                        def createResult = apiClient.createVm(targetNode, vmConfig)
-                       def vmId = createResult.vmid ?: vmConfig.vmid
+                       def vmId = createResult?.vmid ?: vmConfig.vmid
 
-                       // Configure VM resources via API
+                       if (!vmId) {
+                               return ServiceResponse.error("Failed to obtain VM ID after creation")
+                       }
+
                        configureVmResources(apiClient, targetNode, vmId, workloadRequest)
-
-                       // Configure cloud-init via API (no SSH)
+                       configureVmNetwork(apiClient, targetNode, vmId, workloadRequest)
+                       configureVmStorage(apiClient, targetNode, vmId, workloadRequest)
                        configureCloudInitViaApi(apiClient, targetNode, vmId, workloadRequest)
 
-                       // Start VM
                        log.info("Starting VM ${vmId}")
-                       apiClient.startVm(targetNode, vmId)
+                       def startResult = apiClient.startVm(targetNode, vmId)
+                       if (!startResult) {
+                               log.warn("Failed to start VM, but continuing...")
+                       }
 
-                       // Monitor VM startup
                        def finalStatus = monitorVmStartup(apiClient, targetNode, vmId)
-
-                       // Update workload with VM details
                        updateWorkloadDetails(workload, workloadRequest, targetNode, vmId, finalStatus)
 
-                       return ServiceResponse.success(new ProvisionResponse(success: true, message: "VM provisioned successfully"))
+                       return ServiceResponse.success(new ProvisionResponse(success: true, message: "VM provisioned successfully", externalId: vmId))
 
                } catch (Exception e) {
                        log.error("VM provisioning failed: ${e.message}", e)
@@ -347,79 +294,132 @@ class ProxmoxVeProvisionProvider extends AbstractProvisionProvider implements Vm
                }
         }
 
-       private def buildVmConfiguration(WorkloadRequest workloadRequest) {
+       private def buildVmConfiguration(WorkloadRequest workloadRequest, Map opts) {
+               def nextId = getNextAvailableVmId(workloadRequest.cloud)
                def vmConfig = [:]
-               vmConfig.vmid = workloadRequest.server?.id ?: (System.currentTimeMillis() % 100000) as String
-               vmConfig.name = workloadRequest.server?.name ?: "morpheus-vm-${vmConfig.vmid}"
-               vmConfig.memory = (workloadRequest.maxMemory ?: 2048) / (1024 * 1024)
-               vmConfig.cores = workloadRequest.maxCores ?: 2
+               
+               vmConfig.vmid = nextId
+               vmConfig.name = sanitizeVmName(workloadRequest.server?.name ?: "morpheus-vm-${nextId}")
+               vmConfig.memory = Math.max(512, (workloadRequest.maxMemory ?: 2048L * 1024L * 1024L) / (1024L * 1024L))
+               vmConfig.cores = Math.max(1, workloadRequest.maxCores ?: 2)
                vmConfig.sockets = 1
-               vmConfig.ostype = workloadRequest.server?.osType == 'windows' ? 'win10' : 'l26'
-               vmConfig.storage = workloadRequest.server?.getConfigProperty('storage') ?: 'local-lvm'
+               vmConfig.ostype = determineOsType(workloadRequest)
+               vmConfig.boot = 'order=scsi0;ide2;net0'
+               vmConfig.agent = opts.noAgent ? 0 : 1
+               vmConfig.onboot = 1
+               vmConfig.protection = 0
+               
                return vmConfig
        }
 
-       private def selectTargetNode(WorkloadRequest workloadRequest) {
+       private def selectTargetNode(WorkloadRequest workloadRequest, apiClient) {
                def targetNode = workloadRequest.server?.getConfigProperty('proxmoxNode')
-               if (!targetNode) {
-                       try {
-                               def apiClient = new ProxmoxApiClient(context, workloadRequest.cloud, plugin)
-                               def nodes = apiClient.getClusterNodes()
-                               targetNode = nodes?.first()?.node
-                       } catch (Exception e) {
-                               log.warn("Could not get cluster nodes, using 'pve' as default")
-                               targetNode = 'pve'
-                       }
+               if (targetNode) {
+                       return targetNode
                }
-               return targetNode
+               
+               try {
+                       def nodes = apiClient.getClusterNodes()
+                       if (nodes && nodes.size() > 0) {
+                               def availableNodes = nodes.findAll { it.status == 'online' }
+                               if (availableNodes) {
+                                       return availableNodes.first().node
+                               }
+                               return nodes.first().node
+                       }
+               } catch (Exception e) {
+                       log.warn("Could not get cluster nodes: ${e.message}")
+               }
+               
+               return 'pve'
        }
 
        private def configureVmResources(apiClient, targetNode, vmId, workloadRequest) {
-               def resources = [:]
-               if (workloadRequest.maxMemory) {
-                       resources.memory = workloadRequest.maxMemory / 1024 / 1024
+               try {
+                       def resources = [:]
+                       if (workloadRequest.maxMemory) {
+                               resources.memory = Math.max(512, workloadRequest.maxMemory / 1024 / 1024)
+                       }
+                       if (workloadRequest.maxCores) {
+                               resources.cores = Math.max(1, workloadRequest.maxCores)
+                       }
+                       if (resources) {
+                               apiClient.resizeVmResources(targetNode, vmId, resources)
+                       }
+               } catch (Exception e) {
+                       log.warn("Failed to configure VM resources: ${e.message}")
                }
-               if (workloadRequest.maxCores) {
-                       resources.cores = workloadRequest.maxCores
+       }
+
+       private def configureVmNetwork(apiClient, targetNode, vmId, workloadRequest) {
+               try {
+                       def networkBridge = workloadRequest.server?.getConfigProperty('networkBridge') ?: 'vmbr0'
+                       def networkModel = workloadRequest.server?.getConfigProperty('networkModel') ?: 'virtio'
+                       apiClient.configureVmNetwork(targetNode, vmId, networkBridge, networkModel)
+               } catch (Exception e) {
+                       log.warn("Failed to configure VM network: ${e.message}")
                }
-               if (resources) {
-                       apiClient.resizeVmResources(targetNode, vmId, resources)
+       }
+
+       private def configureVmStorage(apiClient, targetNode, vmId, workloadRequest) {
+               try {
+                       def storage = workloadRequest.server?.getConfigProperty('storage') ?: 'local-lvm'
+                       def diskSize = calculateDiskSize(workloadRequest)
+                       apiClient.configureVmDisk(targetNode, vmId, storage, diskSize)
+               } catch (Exception e) {
+                       log.warn("Failed to configure VM storage: ${e.message}")
                }
        }
 
        private def configureCloudInitViaApi(apiClient, targetNode, vmId, workloadRequest) {
-               log.info("Configuring cloud-init via Proxmox API (no SSH)")
-               def cloudInitConfig = [:]
-               cloudInitConfig.user = workloadRequest.server?.sshUsername ?: 'morpheus'
-               if (workloadRequest.server?.sshKey) {
-                       cloudInitConfig.sshKeys = [workloadRequest.server.sshKey]
-               }
-               if (workloadRequest.server?.sshPassword) {
-                       cloudInitConfig.password = workloadRequest.server.sshPassword
-               }
-               if (workloadRequest.networkConfiguration) {
-                       cloudInitConfig.ipConfig = buildIpConfig(workloadRequest.networkConfiguration)
-               }
-               if (cloudInitConfig) {
-                       apiClient.configureCloudInit(targetNode, vmId, cloudInitConfig)
+               try {
+                       log.info("Configuring cloud-init via Proxmox API")
+                       def cloudInitConfig = [:]
+                       
+                       cloudInitConfig.user = workloadRequest.server?.sshUsername ?: 'morpheus'
+                       
+                       if (workloadRequest.server?.sshKey) {
+                               cloudInitConfig.sshKeys = [workloadRequest.server.sshKey]
+                       }
+                       
+                       if (workloadRequest.server?.sshPassword) {
+                               cloudInitConfig.password = workloadRequest.server.sshPassword
+                       }
+                       
+                       if (workloadRequest.networkConfiguration) {
+                               cloudInitConfig.ipConfig = buildIpConfig(workloadRequest.networkConfiguration)
+                       }
+                       
+                       if (cloudInitConfig) {
+                               apiClient.configureCloudInit(targetNode, vmId, cloudInitConfig)
+                       }
+               } catch (Exception e) {
+                       log.warn("Failed to configure cloud-init: ${e.message}")
                }
        }
 
        private def buildIpConfig(networkConfig) {
-               if (networkConfig.staticIp) {
-                       return "ip=${networkConfig.ipAddress}/${networkConfig.subnetMask},gw=${networkConfig.gateway}"
-               } else {
-                       return "ip=dhcp"
+               if (networkConfig?.staticIp && networkConfig?.ipAddress) {
+                       def config = "ip=${networkConfig.ipAddress}"
+                       if (networkConfig.subnetMask) {
+                               config += "/${networkConfig.subnetMask}"
+                       }
+                       if (networkConfig.gateway) {
+                               config += ",gw=${networkConfig.gateway}"
+                       }
+                       return config
                }
+               return "ip=dhcp"
        }
 
        private def monitorVmStartup(apiClient, targetNode, vmId) {
                def maxAttempts = 30
                def attempt = 0
+               
                while (attempt < maxAttempts) {
                        try {
                                def status = apiClient.getVmStatus(targetNode, vmId)
-                               if (status.data?.status == 'running') {
+                               if (status?.data?.status == 'running') {
                                        log.info("VM ${vmId} is running")
                                        return status
                                }
@@ -430,25 +430,58 @@ class ProxmoxVeProvisionProvider extends AbstractProvisionProvider implements Vm
                                attempt++
                        }
                }
-               throw new RuntimeException("VM failed to start within timeout period")
+               
+               log.warn("VM ${vmId} did not start within timeout period")
+               return null
        }
 
        private def updateWorkloadDetails(Workload workload, WorkloadRequest workloadRequest, targetNode, vmId, status) {
-               workload.server.externalId = vmId
-               workload.server.uniqueId = vmId
-               workload.server.powerState = 'on'
-               workload.server.hostname = workload.server.name
+               if (workload?.server) {
+                       workload.server.externalId = vmId.toString()
+                       workload.server.uniqueId = vmId.toString()
+                       workload.server.powerState = 'on'
+                       workload.server.hostname = workload.server.name
+               }
 
-               workloadRequest.server.externalId = vmId
-               workloadRequest.server.uniqueId = vmId
-               workloadRequest.server.powerState = 'on'
-               workloadRequest.server.hostname = workloadRequest.server.name
+               if (workloadRequest?.server) {
+                       workloadRequest.server.externalId = vmId.toString()
+                       workloadRequest.server.uniqueId = vmId.toString()
+                       workloadRequest.server.powerState = 'on'
+                       workloadRequest.server.hostname = workloadRequest.server.name
+               }
        }
 
+       private def sanitizeVmName(String name) {
+               return name?.replaceAll(/[^a-zA-Z0-9\-_]/, '-')?.toLowerCase()
+       }
+
+       private def determineOsType(WorkloadRequest workloadRequest) {
+               def osType = workloadRequest.server?.osType?.toLowerCase()
+               if (osType?.contains('windows')) {
+                       return 'win10'
+               }
+               return 'l26'
+       }
+
+       private def calculateDiskSize(WorkloadRequest workloadRequest) {
+               def maxStorage = workloadRequest.maxStorage ?: (32L * 1024L * 1024L * 1024L)
+               def sizeInGB = Math.max(8, maxStorage / (1024L * 1024L * 1024L))
+               return "${sizeInGB}G"
+       }
+
+       private def getNextAvailableVmId(Cloud cloud) {
+               try {
+                       def apiClient = new ProxmoxApiClient(context, cloud, plugin)
+                       def result = apiClient.getNextVmId('pve')
+                       return result?.data ?: (100 + (System.currentTimeMillis() % 900))
+               } catch (Exception e) {
+                       log.warn("Failed to get next VM ID: ${e.message}")
+                       return 100 + (System.currentTimeMillis() % 900)
+               }
+       }
 
 	private DatastoreIdentity getDefaultDatastore(Long cloudId) {
 		log.debug("getDefaultDatastoreName()...")
-		//returns the largest non-local datastore
 		Datastore rtn = null
 		context.async.cloud.datastore.list(new DataQuery().withFilters([
 				new DataFilter("refType", "ComputeZone"),
@@ -483,192 +516,231 @@ class ProxmoxVeProvisionProvider extends AbstractProvisionProvider implements Vm
 		return hvNode
 	}
 
-
-
-
-
-	/**
-	 * This method is called after successful completion of runWorkload and provides an opportunity to perform some final
-	 * actions during the provisioning process. For example, ejected CDs, cleanup actions, etc
-	 * @param workload the Workload object that has been provisioned
-	 * @return Response from the API
-	 */
 	@Override
 	ServiceResponse finalizeWorkload(Workload workload) {
-
-
 		return ServiceResponse.success()
 	}
 
-	/**
-	 * Issues the remote calls necessary top stop a workload element from running.
-	 * @param workload the Workload we want to shut down
-	 * @return Response from API
-	 */
 	@Override
 	ServiceResponse stopWorkload(Workload workload) {
 		try {
-			HttpApiClient client = new HttpApiClient()
+			if (!workload?.server?.cloud) {
+				return ServiceResponse.error("Invalid workload configuration")
+			}
+			
 			ComputeServer computeServer = workload.server
-			Map authConfig = plugin.getAuthConfig(computeServer.cloud)
+			def apiClient = new ProxmoxApiClient(context, computeServer.cloud, plugin)
+			def node = computeServer.parentServer?.externalId ?: 'pve'
+			def vmId = computeServer.externalId
 
-			return ProxmoxApiComputeUtil.stopVM(client, authConfig, computeServer.parentServer.name, computeServer.externalId)
-		} catch (e) {
-			log.error "Error performing stop on VM: ${e}", e
+			if (!vmId) {
+				return ServiceResponse.error("VM ID not found")
+			}
+
+			def result = apiClient.stopVm(node, vmId)
+			if (result) {
+				return ServiceResponse.success("VM stopped successfully")
+			} else {
+				return ServiceResponse.error("Failed to stop VM")
+			}
+		} catch (Exception e) {
+			log.error("Error performing stop on VM: ${e}", e)
 			return ServiceResponse.error("Error performing stop on VM: ${e}")
 		}
 	}
 
-	/**
-	 * Issues the remote calls necessary to start a workload element for running.
-	 * @param workload the Workload we want to start up.
-	 * @return Response from API
-	 */
 	@Override
 	ServiceResponse startWorkload(Workload workload) {
 		try {
-			HttpApiClient client = new HttpApiClient()
+			if (!workload?.server?.cloud) {
+				return ServiceResponse.error("Invalid workload configuration")
+			}
+			
 			ComputeServer computeServer = workload.server
-			Map authConfig = plugin.getAuthConfig(computeServer.cloud)
+			def apiClient = new ProxmoxApiClient(context, computeServer.cloud, plugin)
+			def node = computeServer.parentServer?.externalId ?: 'pve'
+			def vmId = computeServer.externalId
 
-			return ProxmoxApiComputeUtil.startVM(client, authConfig, computeServer.parentServer.name, computeServer.externalId)
-		} catch (e) {
-			log.error "Error performing start on VM: ${e}", e
+			if (!vmId) {
+				return ServiceResponse.error("VM ID not found")
+			}
+
+			def result = apiClient.startVm(node, vmId)
+			if (result) {
+				return ServiceResponse.success("VM started successfully")
+			} else {
+				return ServiceResponse.error("Failed to start VM")
+			}
+		} catch (Exception e) {
+			log.error("Error performing start on VM: ${e}", e)
 			return ServiceResponse.error("Error performing start on VM: ${e}")
 		}
 	}
 
-	/**
-	 * Issues the remote calls to restart a workload element. In some cases this is just a simple alias call to do a stop/start,
-	 * however, in some cases cloud providers provide a direct restart call which may be preferred for speed.
-	 * @param workload the Workload we want to restart.
-	 * @return Response from API
-	 */
 	@Override
 	ServiceResponse restartWorkload(Workload workload) {
-		// Generally a call to stopWorkLoad() and then startWorkload()
-		return ServiceResponse.success()
+		try {
+			if (!workload?.server?.cloud) {
+				return ServiceResponse.error("Invalid workload configuration")
+			}
+			
+			ComputeServer computeServer = workload.server
+			def apiClient = new ProxmoxApiClient(context, computeServer.cloud, plugin)
+			def node = computeServer.parentServer?.externalId ?: 'pve'
+			def vmId = computeServer.externalId
+
+			if (!vmId) {
+				return ServiceResponse.error("VM ID not found")
+			}
+
+			def result = apiClient.restartVm(node, vmId)
+			if (result) {
+				return ServiceResponse.success("VM restarted successfully")
+			} else {
+				return ServiceResponse.error("Failed to restart VM")
+			}
+		} catch (Exception e) {
+			log.error("Error performing restart on VM: ${e}", e)
+			return ServiceResponse.error("Error performing restart on VM: ${e}")
+		}
 	}
 
-	/**
-	 * This is the key method called to destroy / remove a workload. This should make the remote calls necessary to remove any assets
-	 * associated with the workload.
-	 * @param workload to remove
-	 * @param opts map of options
-	 * @return Response from API
-	 */
 	@Override
 	ServiceResponse removeWorkload(Workload workload, Map opts) {
 		try {
-			HttpApiClient deleteClient = new HttpApiClient()
-			HttpApiClient stopClient = new HttpApiClient()
+			if (!workload?.server?.cloud) {
+				return ServiceResponse.error("Invalid workload configuration")
+			}
+			
 			ComputeServer server = workload.server
-			Cloud cloud = server.cloud
-			Map authConfig = plugin.getAuthConfig(cloud)
+			def apiClient = new ProxmoxApiClient(context, server.cloud, plugin)
+			def node = server.parentServer?.externalId ?: 'pve'
+			def vmId = server.externalId
 
-			ProxmoxApiComputeUtil.stopVM(stopClient, authConfig, server.parentServer.name, server.externalId)
-			sleep(5000)
-			return ProxmoxApiComputeUtil.destroyVM(deleteClient, authConfig, server.parentServer.name, server.externalId)
-		} catch (e) {
-			log.error "Error performing destroy on VM: ${e}", e
+			if (!vmId) {
+				return ServiceResponse.error("VM ID not found")
+			}
+
+			try {
+				apiClient.stopVm(node, vmId)
+				Thread.sleep(5000)
+			} catch (Exception stopEx) {
+				log.warn("Failed to stop VM before deletion: ${stopEx.message}")
+			}
+
+			def result = apiClient.deleteVm(node, vmId)
+			if (result) {
+				return ServiceResponse.success("VM removed successfully")
+			} else {
+				return ServiceResponse.error("Failed to remove VM")
+			}
+		} catch (Exception e) {
+			log.error("Error performing destroy on VM: ${e}", e)
 			return ServiceResponse.error("Error performing destroy on VM: ${e}")
 		}
 	}
 
-	/**
-	 * Method called after a successful call to runWorkload to obtain the details of the ComputeServer. Implementations
-	 * should not return until the server is successfully created in the underlying cloud or the server fails to
-	 * create.
-	 * @param server to check status
-	 * @return Response from API. The publicIp and privateIp set on the WorkloadResponse will be utilized to update the ComputeServer
-	 */
 	@Override
 	ServiceResponse<ProvisionResponse> getServerDetails(ComputeServer server) {
-		return new ServiceResponse<ProvisionResponse>(true, null, null, new ProvisionResponse(success:true))
+		try {
+			if (!server?.cloud || !server?.externalId) {
+				return new ServiceResponse<ProvisionResponse>(false, "Invalid server configuration", null, null)
+			}
+			
+			def apiClient = new ProxmoxApiClient(context, server.cloud, plugin)
+			def node = server.parentServer?.externalId ?: 'pve'
+			def vmId = server.externalId
+			
+			def status = apiClient.getVmStatus(node, vmId)
+			def config = apiClient.getVmConfig(node, vmId)
+			
+			def provisionResponse = new ProvisionResponse(success: true)
+			
+			if (status?.data?.status) {
+				provisionResponse.powerState = status.data.status == 'running' ? 'on' : 'off'
+			}
+			
+			return new ServiceResponse<ProvisionResponse>(true, null, null, provisionResponse)
+		} catch (Exception e) {
+			log.error("Error getting server details: ${e.message}", e)
+			return new ServiceResponse<ProvisionResponse>(true, null, null, new ProvisionResponse(success: true))
+		}
 	}
 
-	/**
-	 * Method called before runWorkload to allow implementers to create resources required before runWorkload is called
-	 * @param workload that will be provisioned
-	 * @param opts additional options
-	 * @return Response from API
-	 */
 	@Override
 	ServiceResponse createWorkloadResources(Workload workload, Map opts) {
 		return ServiceResponse.success()
 	}
 
-	/**
-	 * Stop the server
-	 * @param computeServer to stop
-	 * @return Response from API
-	 */
 	@Override
 	ServiceResponse stopServer(ComputeServer computeServer) {
 		try {
-			HttpApiClient client = new HttpApiClient()
-			Map authConfig = plugin.getAuthConfig(computeServer.cloud)
+			if (!computeServer?.cloud) {
+				return ServiceResponse.error("Invalid server configuration")
+			}
+			
+			def apiClient = new ProxmoxApiClient(context, computeServer.cloud, plugin)
+			def node = computeServer.parentServer?.externalId ?: 'pve'
+			def vmId = computeServer.externalId
 
-			return ProxmoxApiComputeUtil.stopVM(client, authConfig, computeServer.parentServer.name, computeServer.externalId)
-		} catch (e) {
-			log.error "Error performing stop on VM: ${e}", e
-			return ServiceResponse.error("Error performing stop on VM: ${e}")
+			if (!vmId) {
+				return ServiceResponse.error("VM ID not found")
+			}
+
+			def result = apiClient.stopVm(node, vmId)
+			if (result) {
+				return ServiceResponse.success("Server stopped successfully")
+			} else {
+				return ServiceResponse.error("Failed to stop server")
+			}
+		} catch (Exception e) {
+			log.error("Error performing stop on server: ${e}", e)
+			return ServiceResponse.error("Error performing stop on server: ${e}")
 		}
 	}
 
-	/**
-	 * Start the server
-	 * @param computeServer to start
-	 * @return Response from API
-	 */
 	@Override
 	ServiceResponse startServer(ComputeServer computeServer) {
 		try {
-			HttpApiClient client = new HttpApiClient()
-			Map authConfig = plugin.getAuthConfig(computeServer.cloud)
+			if (!computeServer?.cloud) {
+				return ServiceResponse.error("Invalid server configuration")
+			}
+			
+			def apiClient = new ProxmoxApiClient(context, computeServer.cloud, plugin)
+			def node = computeServer.parentServer?.externalId ?: 'pve'
+			def vmId = computeServer.externalId
 
-			return ProxmoxApiComputeUtil.startVM(client, authConfig, computeServer.parentServer.name, computeServer.externalId)
-		} catch (e) {
-			log.error "Error performing start on VM: ${e}", e
-			return ServiceResponse.error("Error performing start on VM: ${e}")
+			if (!vmId) {
+				return ServiceResponse.error("VM ID not found")
+			}
+
+			def result = apiClient.startVm(node, vmId)
+			if (result) {
+				return ServiceResponse.success("Server started successfully")
+			} else {
+				return ServiceResponse.error("Failed to start server")
+			}
+		} catch (Exception e) {
+			log.error("Error performing start on server: ${e}", e)
+			return ServiceResponse.error("Error performing start on server: ${e}")
 		}
 	}
 
-	/**
-	 * Returns the Morpheus Context for interacting with data stored in the Main Morpheus Application
-	 *
-	 * @return an implementation of the MorpheusContext for running Future based rxJava queries
-	 */
 	@Override
 	MorpheusContext getMorpheus() {
 		return this.@context
 	}
 
-	/**
-	 * Returns the instance of the Plugin class that this provider is loaded from
-	 * @return Plugin class contains references to other providers
-	 */
 	@Override
 	Plugin getPlugin() {
 		return this.@plugin
 	}
 
-	/**
-	 * A unique shortcode used for referencing the provided provider. Make sure this is going to be unique as any data
-	 * that is seeded or generated related to this provider will reference it by this code.
-	 * @return short code string that should be unique across all other plugin implementations.
-	 */
         @Override
         String getCode() {
                 return 'proxmox-ve-provision'
         }
 
-	/**
-	 * Provides the provider name for reference when adding to the Morpheus Orchestrator
-	 * NOTE: This may be useful to set as an i18n key for UI reference and localization support.
-	 *
-	 * @return either an English name of a Provider or an i18n based key that can be scanned for in a properties file.
-	 */
 	@Override
 	String getName() {
 		return 'Proxmox VE Provisioning'
@@ -682,105 +754,83 @@ class ProxmoxVeProvisionProvider extends AbstractProvisionProvider implements Vm
 		return context.async.computeServer.get(server.id).blockingGet()
 	}
 
-
-	///MISSING LOGO issue
-	////GOTCHA that needs to be fixed. The instanceType = instance-type.stackit in the scribe yml doesn't work
 	@Override
 	HostType getHostType() {
 		HostType.vm
 	}
 
-	// ResizeFacet
 	@Override
 	ServiceResponse resizeWorkload(Instance instance, Workload workload, ResizeRequest resizeRequest, Map opts) {
-		log.debug("resizeWorkload ${workload ? "workload" : "server"}.id: ${workload?.id ?: server?.id} - opts: ${opts}")
+		log.debug("resizeWorkload ${workload ? "workload" : "server"}.id: ${workload?.id} - opts: ${opts}")
 
-		// This method should handle hosts and VMs in future, so these are temp
 		boolean isWorkload = true
 		def server = workload.getServer()
-		//
-
 		ServiceResponse rtn = ServiceResponse.success()
 
 		ComputeServer computeServer = context.async.computeServer.get(server.id).blockingGet()
-		def authConfigMap = plugin.getAuthConfig(computeServer.cloud)
+		
 		try {
-			HttpApiClient resizeClient = new HttpApiClient()
-			HttpApiClient rebootClient = new HttpApiClient()
+			def apiClient = new ProxmoxApiClient(context, computeServer.cloud, plugin)
+			def node = computeServer.parentServer?.externalId ?: 'pve'
+			def vmId = computeServer.externalId
 
-			//Compute
+			if (!vmId) {
+				return ServiceResponse.error("VM ID not found")
+			}
+
 			computeServer.status = 'resizing'
 			computeServer = saveAndGet(computeServer)
 
 			def requestedMemory = resizeRequest.maxMemory
 			def requestedCores = resizeRequest?.maxCores
 
-			def currentMemory
-			def currentCores
+			def currentMemory = isWorkload ? 
+				(workload.maxMemory ?: workload.getConfigProperty('maxMemory')?.toLong()) :
+				(computeServer.maxMemory ?: computeServer.getConfigProperty('maxMemory')?.toLong())
+			def currentCores = isWorkload ? 
+				(workload.maxCores ?: 1) :
+				(server.maxCores ?: 1)
 
-			if (isWorkload) {
-				currentMemory = workload.maxMemory ?: workload.getConfigProperty('maxMemory')?.toLong()
-				currentCores = workload.maxCores ?: 1
-			} else {
-				currentMemory = computeServer.maxMemory ?: computeServer.getConfigProperty('maxMemory')?.toLong()
-				currentCores = server.maxCores ?: 1
-			}
 			def neededMemory = requestedMemory - currentMemory
 			def neededCores = (requestedCores ?: 1) - (currentCores ?: 1)
-			def allocationSpecs = [externalId: computeServer.externalId, maxMemory: requestedMemory, maxCpu: requestedCores]
+
 			if (neededMemory > 100000000l || neededMemory < -100000000l || neededCores != 0) {
-				log.info("Resizing VM with specs: ${allocationSpecs}")
-				log.info("Resizing vm: ${workload.getInstance().name} with $server.coresPerSocket cores and $server.maxMemory memory")
-				//resizeVMCompute(HttpApiClient client, Map authConfig, String node, String vmId, Long cpu, Long ram)
-				ProxmoxApiComputeUtil.resizeVMCompute(resizeClient, authConfigMap, computeServer.parentServer.name, computeServer.externalId, requestedCores, requestedMemory)
-				ProxmoxApiComputeUtil.rebootVM(rebootClient, authConfigMap, computeServer.name, computeServer.externalId)
+				log.info("Resizing VM ${vmId} on node ${node}")
+				log.info("Resizing vm: ${workload.getInstance().name} with ${requestedCores} cores and ${requestedMemory} memory")
+				
+				def resources = [
+					memory: Math.max(512, requestedMemory / 1024 / 1024), 
+					cores: Math.max(1, requestedCores)
+				]
+				def resizeResult = apiClient.resizeVmResources(node, vmId, resources)
+				
+				if (resizeResult) {
+					apiClient.restartVm(node, vmId)
+					computeServer.status = 'provisioned'
+					computeServer = saveAndGet(computeServer)
+				} else {
+					throw new RuntimeException("Failed to resize VM resources")
+				}
 			}
-		} catch (e) {
+		} catch (Exception e) {
 			log.error("Unable to resize workload: ${e.message}", e)
 			computeServer.status = 'provisioned'
 			if (!isWorkload)
 				computeServer.statusMessage = "Unable to resize server: ${e.message}"
 			computeServer = saveAndGet(computeServer)
 			rtn.success = false
-			def error = morpheus.services.localization.get("gomorpheus.provision.xenServer.error.resizeWorkload")
-			rtn.setError(error)
+			rtn.setError("Unable to resize workload: ${e.message}")
 		}
 		return rtn
 	}
 
-
-	//BlockDeviceNameFacet
-	/*
-	@Override
-	String[] getDiskNameList() {
-		return new String[0]
-	}
-
-	@Override
-	String getDiskName(int index) {
-		return super.getDiskName(index)
-	}
-
-	@Override
-	String getDiskName(int index, String platform) {
-		return super.getDiskName(index, platform)
-	}
-
-	@Override
-	String getDiskDisplayName(int index) {
-		return super.getDiskDisplayName(index)
-	}
-
-	@Override
-	String getDiskDisplayName(int index, String platform) {
-		return super.getDiskDisplayName(index, platform)
-	}
-
-	 */
-
         @Override
         ServiceResponse validateHost(ComputeServer server, Map opts) {
                 try {
+                        if (!server?.cloud) {
+                                return ServiceResponse.error("Invalid server configuration")
+                        }
+                        
                         def apiClient = new ProxmoxApiClient(context, server.cloud, plugin)
                         def connectionTest = apiClient.testConnection()
 

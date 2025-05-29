@@ -16,17 +16,15 @@ class ProxmoxApiClient {
 
     private static final HttpApiClient HTTP_CLIENT = new HttpApiClient()
 
-    // Connection pool properties
     private static final Map<String, ConnectionPool> connectionPools = [:]
     private static final int MAX_CONNECTIONS_PER_HOST = 10
     private static final int CONNECTION_TIMEOUT_MS = 30000
-    private static final int IDLE_TIMEOUT_MS = 300000 // 5 minutes
+    private static final int IDLE_TIMEOUT_MS = 300000
 
-    // Token caching properties
     private String cachedTicket = null
     private String cachedCSRFToken = null
     private long tokenExpiry = 0
-    private static final long TOKEN_LIFETIME_MS = 7200000L // 2 hours
+    private static final long TOKEN_LIFETIME_MS = 7200000L
 
     ProxmoxApiClient(morpheusContext, cloud, plugin) {
         this.morpheusContext = morpheusContext
@@ -34,9 +32,6 @@ class ProxmoxApiClient {
         this.plugin = plugin
     }
 
-    /**
-     * Simple HTTP connection wrapper used by the connection pool
-     */
     private static class HttpConnection {
         String url
         Map<String,String> headers = [:]
@@ -66,9 +61,6 @@ class ProxmoxApiClient {
         }
     }
 
-    /**
-     * Connection pool per host
-     */
     private static class ConnectionPool {
         Queue<HttpConnection> availableConnections = new ConcurrentLinkedQueue<>()
         Set<HttpConnection> activeConnections = ConcurrentHashMap.newKeySet()
@@ -110,11 +102,8 @@ class ProxmoxApiClient {
         }
     }
     
-    /**
-     * Get stored credentials from Morpheus Cloud configuration
-     */
     private Map getClusterCredentials() {
-        def authConfig = plugin.getAuthConfig(cloud)
+        def authConfig = this.plugin.getAuthConfig(this.cloud)
 
         if (!authConfig.username || !authConfig.password) {
             throw new RuntimeException("Proxmox cluster credentials not configured")
@@ -123,9 +112,6 @@ class ProxmoxApiClient {
         return [username: authConfig.username, password: authConfig.password]
     }
     
-    /**
-     * Make HTTP call using connection pooling
-     */
     def makeHttpCall(String url, String method, Map headers = [:], String body = null) {
         def startTime = System.currentTimeMillis()
         boolean connectionFromPool = false
@@ -134,7 +120,6 @@ class ProxmoxApiClient {
         HttpConnection connection = null
 
         try {
-            // Get connection from pool
             connection = pool.borrowConnection()
             if (!connection || !connection.isValid()) {
                 connection = createNewConnection(url, headers)
@@ -143,10 +128,7 @@ class ProxmoxApiClient {
                 connection.updateHeaders(headers)
             }
 
-            // Make the request
             def result = executeRequest(connection, method, body)
-
-            // Return connection to pool
             pool.returnConnection(connection)
 
             def endTime = System.currentTimeMillis()
@@ -164,9 +146,6 @@ class ProxmoxApiClient {
         }
     }
     
-    /**
-     * Authenticate with Proxmox cluster and get ticket
-     */
     private Map authenticate() {
         if (cachedTicket && cachedCSRFToken && System.currentTimeMillis() < tokenExpiry) {
             log.debug("Using cached authentication token")
@@ -183,7 +162,6 @@ class ProxmoxApiClient {
             def result = makeHttpCall(authUrl, 'POST', headers, formData)
 
             if (result.data?.ticket) {
-                // Cache the authentication tokens
                 cachedTicket = result.data.ticket
                 cachedCSRFToken = result.data.CSRFPreventionToken
                 tokenExpiry = System.currentTimeMillis() + TOKEN_LIFETIME_MS
@@ -210,9 +188,6 @@ class ProxmoxApiClient {
         return authenticate()
     }
     
-    /**
-     * Make authenticated API call to Proxmox
-     */
     def callApi(String endpoint, String method = 'GET', Map data = null) {
         def auth = getAuthToken()
 
@@ -238,9 +213,6 @@ class ProxmoxApiClient {
         }
     }
     
-    /**
-     * Create VM using cluster credentials
-     */
     def createVm(String node, Map vmConfig) {
         log.info("Creating VM on node ${node} using cluster credentials")
         
@@ -255,95 +227,62 @@ class ProxmoxApiClient {
         }
     }
     
-    /**
-     * Get VM status using cluster credentials
-     */
     def getVmStatus(String node, String vmId) {
         def endpoint = "/nodes/${node}/qemu/${vmId}/status/current"
         return callApi(endpoint, 'GET')
     }
     
-    /**
-     * Start VM using cluster credentials
-     */
     def startVm(String node, String vmId) {
         log.info("Starting VM ${vmId} on node ${node}")
         def endpoint = "/nodes/${node}/qemu/${vmId}/status/start"
         return callApi(endpoint, 'POST')
     }
     
-    /**
-     * Stop VM using cluster credentials
-     */
     def stopVm(String node, String vmId) {
         log.info("Stopping VM ${vmId} on node ${node}")
         def endpoint = "/nodes/${node}/qemu/${vmId}/status/stop"
         return callApi(endpoint, 'POST')
     }
     
-    /**
-     * Restart VM using cluster credentials
-     */
     def restartVm(String node, String vmId) {
         log.info("Restarting VM ${vmId} on node ${node}")
         def endpoint = "/nodes/${node}/qemu/${vmId}/status/reboot"
         return callApi(endpoint, 'POST')
     }
     
-    /**
-     * Delete VM using cluster credentials
-     */
     def deleteVm(String node, String vmId) {
         log.info("Deleting VM ${vmId} on node ${node}")
         def endpoint = "/nodes/${node}/qemu/${vmId}"
         return callApi(endpoint, 'DELETE')
     }
     
-    /**
-     * Get cluster nodes - demonstrates cluster-level access
-     */
     def getClusterNodes() {
         log.info("Getting cluster nodes using cluster credentials")
         def result = callApi('/cluster/status', 'GET')
         return result.data?.findAll { it.type == 'node' }
     }
     
-    /**
-     * Get cluster resources
-     */
     def getClusterResources() {
         log.info("Getting cluster resources")
         def result = callApi('/cluster/resources', 'GET')
         return result.data
     }
     
-    /**
-     * Get node information
-     */
     def getNodeInfo(String node) {
         def endpoint = "/nodes/${node}/status"
         return callApi(endpoint, 'GET')
     }
     
-    /**
-     * Get storage information for a node
-     */
     def getNodeStorage(String node) {
         def endpoint = "/nodes/${node}/storage"
         return callApi(endpoint, 'GET')
     }
     
-    /**
-     * Get network interfaces for a node
-     */
     def getNodeNetworks(String node) {
         def endpoint = "/nodes/${node}/network"
         return callApi(endpoint, 'GET')
     }
 
-    /**
-     * Create VLAN interface on Proxmox node
-     */
     def createVlan(String node, String bridge, int vlanId, Map config = [:]) {
         log.info("Creating VLAN ${vlanId} on bridge ${bridge} at node ${node}")
 
@@ -369,9 +308,6 @@ class ProxmoxApiClient {
         return callApi(endpoint, 'POST', vlanConfig)
     }
 
-    /**
-     * Delete VLAN interface
-     */
     def deleteVlan(String node, String bridge, int vlanId) {
         log.info("Deleting VLAN ${vlanId} on bridge ${bridge} at node ${node}")
 
@@ -380,9 +316,6 @@ class ProxmoxApiClient {
         return callApi(endpoint, 'DELETE')
     }
 
-    /**
-     * Update VLAN configuration
-     */
     def updateVlan(String node, String vlanInterface, Map config) {
         log.info("Updating VLAN ${vlanInterface} on node ${node}")
 
@@ -390,17 +323,11 @@ class ProxmoxApiClient {
         return callApi(endpoint, 'PUT', config)
     }
 
-    /**
-     * Get VLAN information
-     */
     def getVlanInfo(String node, String vlanInterface) {
         def endpoint = "/nodes/${node}/network/${vlanInterface}"
         return callApi(endpoint, 'GET')
     }
 
-    /**
-     * Create network bond for high availability
-     */
     def createBond(String node, String bondName, List<String> slaves, Map config = [:]) {
         log.info("Creating bond ${bondName} on node ${node} with slaves ${slaves}")
 
@@ -422,9 +349,6 @@ class ProxmoxApiClient {
         return callApi(endpoint, 'POST', bondConfig)
     }
 
-    /**
-     * Delete network bond
-     */
     def deleteBond(String node, String bondName) {
         log.info("Deleting bond ${bondName} on node ${node}")
 
@@ -432,9 +356,6 @@ class ProxmoxApiClient {
         return callApi(endpoint, 'DELETE')
     }
 
-    /**
-     * Create advanced bridge with VLAN filtering
-     */
     def createAdvancedBridge(String node, String bridgeName, Map config = [:]) {
         log.info("Creating advanced bridge ${bridgeName} on node ${node}")
 
@@ -461,43 +382,28 @@ class ProxmoxApiClient {
         return callApi(endpoint, 'POST', bridgeConfig)
     }
     
-    /**
-     * Get VM list for a node
-     */
     def getNodeVms(String node) {
         def endpoint = "/nodes/${node}/qemu"
         return callApi(endpoint, 'GET')
     }
     
-    /**
-     * Get VM configuration
-     */
     def getVmConfig(String node, String vmId) {
         def endpoint = "/nodes/${node}/qemu/${vmId}/config"
         return callApi(endpoint, 'GET')
     }
     
-    /**
-     * Update VM configuration
-     */
     def updateVmConfig(String node, String vmId, Map config) {
         log.info("Updating VM ${vmId} configuration on node ${node}")
         def endpoint = "/nodes/${node}/qemu/${vmId}/config"
         return callApi(endpoint, 'PUT', config)
     }
     
-    /**
-     * Clone VM
-     */
     def cloneVm(String node, String vmId, Map cloneConfig) {
         log.info("Cloning VM ${vmId} on node ${node}")
         def endpoint = "/nodes/${node}/qemu/${vmId}/clone"
         return callApi(endpoint, 'POST', cloneConfig)
     }
     
-    /**
-     * Create VM snapshot
-     */
     def createSnapshot(String node, String vmId, String snapname, String description = null) {
         log.info("Creating snapshot ${snapname} for VM ${vmId} on node ${node}")
         def endpoint = "/nodes/${node}/qemu/${vmId}/snapshot"
@@ -508,26 +414,17 @@ class ProxmoxApiClient {
         return callApi(endpoint, 'POST', data)
     }
     
-    /**
-     * Delete VM snapshot
-     */
     def deleteSnapshot(String node, String vmId, String snapname) {
         log.info("Deleting snapshot ${snapname} for VM ${vmId} on node ${node}")
         def endpoint = "/nodes/${node}/qemu/${vmId}/snapshot/${snapname}"
         return callApi(endpoint, 'DELETE')
     }
     
-    /**
-     * Get VM snapshots
-     */
     def getVmSnapshots(String node, String vmId) {
         def endpoint = "/nodes/${node}/qemu/${vmId}/snapshot"
         return callApi(endpoint, 'GET')
     }
     
-    /**
-     * Resize VM disk
-     */
     def resizeDisk(String node, String vmId, String disk, String size) {
         log.info("Resizing disk ${disk} to ${size} for VM ${vmId} on node ${node}")
         def endpoint = "/nodes/${node}/qemu/${vmId}/resize"
@@ -535,9 +432,6 @@ class ProxmoxApiClient {
         return callApi(endpoint, 'PUT', data)
     }
     
-    /**
-     * Migrate VM to another node
-     */
     def migrateVm(String node, String vmId, String targetNode, Map options = [:]) {
         log.info("Migrating VM ${vmId} from ${node} to ${targetNode}")
         def endpoint = "/nodes/${node}/qemu/${vmId}/migrate"
@@ -545,22 +439,15 @@ class ProxmoxApiClient {
         return callApi(endpoint, 'POST', data)
     }
     
-    /**
-     * Get cluster version information
-     */
     def getVersion() {
         def result = callApi('/version', 'GET')
         return result.data
     }
     
-    /**
-     * Test cluster connectivity
-     */
     def testConnection() {
         try {
             log.info("Testing Proxmox cluster connection...")
             
-            // Test basic connectivity first
             def versionResult = callApi('/version', 'GET')
             if (versionResult) {
                 log.info("Successfully connected to Proxmox cluster")
@@ -582,9 +469,6 @@ class ProxmoxApiClient {
         }
     }
 
-    /**
-     * Configure cloud-init via Proxmox API (replaces SSH/SFTP approach)
-     */
     def configureCloudInit(String node, String vmId, Map cloudInitConfig) {
         log.info("Configuring cloud-init for VM ${vmId} on node ${node} via API")
         def config = [:]
@@ -614,18 +498,12 @@ class ProxmoxApiClient {
         }
     }
 
-    /**
-     * Upload image to Proxmox storage via API (replaces SFTP)
-     */
     def uploadImageToStorage(String node, String storage, String filename, String contentType = 'iso') {
         log.info("Uploading ${filename} to storage ${storage} on node ${node} via API")
         def endpoint = "/nodes/${node}/storage/${storage}/upload"
         return [success: true, message: "Upload endpoint configured: ${endpoint}"]
     }
 
-    /**
-     * Create VM disk from template via API (replaces qm importdisk)
-     */
     def createDiskFromTemplate(String node, String vmId, String templateId, String storage) {
         log.info("Creating disk for VM ${vmId} from template ${templateId} via API")
         def cloneEndpoint = "/nodes/${node}/qemu/${templateId}/clone"
@@ -641,9 +519,6 @@ class ProxmoxApiClient {
         }
     }
 
-    /**
-     * Resize VM resources via API
-     */
     def resizeVmResources(String node, String vmId, Map resources) {
         log.info("Resizing VM ${vmId} resources via API")
         def endpoint = "/nodes/${node}/qemu/${vmId}/config"
@@ -664,9 +539,6 @@ class ProxmoxApiClient {
         }
     }
 
-    /**
-     * Configure VM network via API
-     */
     def configureVmNetwork(String node, String vmId, String bridge, String model = 'virtio') {
         log.info("Configuring network for VM ${vmId} via API")
         def endpoint = "/nodes/${node}/qemu/${vmId}/config"
@@ -678,9 +550,6 @@ class ProxmoxApiClient {
         }
     }
 
-    /**
-     * Configure VM disk via API
-     */
     def configureVmDisk(String node, String vmId, String storage, String size = '32G', String diskType = 'scsi0') {
         log.info("Configuring disk for VM ${vmId} via API")
         def endpoint = "/nodes/${node}/qemu/${vmId}/config"
@@ -692,61 +561,40 @@ class ProxmoxApiClient {
         }
     }
 
-    /**
-     * Create vzdump backup
-     */
     def createVzdumpBackup(String node, Map backupConfig) {
         log.info("Creating vzdump backup on node ${node}")
         def endpoint = "/nodes/${node}/vzdump"
         return callApi(endpoint, 'POST', backupConfig)
     }
 
-    /**
-     * Get task status
-     */
     def getTaskStatus(String node, String taskId) {
         def endpoint = "/nodes/${node}/tasks/${taskId}/status"
         return callApi(endpoint, 'GET')
     }
 
-    /**
-     * Get backup files from storage
-     */
     def getStorageBackups(String node, String storage) {
         def endpoint = "/nodes/${node}/storage/${storage}/content"
         return callApi(endpoint, 'GET')
     }
 
-    /**
-     * Delete backup file
-     */
     def deleteBackupFile(String node, String storage, String volid) {
         log.info("Deleting backup file ${volid} from ${storage} on ${node}")
         def endpoint = "/nodes/${node}/storage/${storage}/content/${URLEncoder.encode(volid, 'UTF-8')}"
         return callApi(endpoint, 'DELETE')
     }
 
-    /**
-     * Rollback snapshot
-     */
     def rollbackSnapshot(String node, String vmId, String snapname) {
         log.info("Rolling back snapshot ${snapname} for VM ${vmId} on node ${node}")
         def endpoint = "/nodes/${node}/qemu/${vmId}/snapshot/${snapname}/rollback"
         return callApi(endpoint, 'POST')
     }
 
-    /**
-     * Restore backup file
-     */
     def restoreBackup(String node, Map restoreConfig) {
         log.info("Restoring backup on node ${node}")
         def endpoint = "/nodes/${node}/qemu/${restoreConfig.vmid}/restore"
         return callApi(endpoint, 'POST', restoreConfig)
     }
 
-    /**
-     * Get next available VM ID
-     */
     def getNextVmId(String node) {
         def endpoint = "/cluster/nextid"
         return callApi(endpoint, 'GET')
@@ -757,9 +605,6 @@ class ProxmoxApiClient {
         throw new RuntimeException("${operation} failed: ${e.message}")
     }
 
-    /**
-     * Extract host key used for pooling
-     */
     private String extractHostKey(String url) {
         def uri = new URI(url)
         return "${uri.scheme}://${uri.host}:${uri.port}"
@@ -808,7 +653,6 @@ class ProxmoxApiClient {
         }
     }
 
-    // Cleanup method for idle connections
     static void cleanupIdleConnections() {
         def now = System.currentTimeMillis()
         connectionPools.entrySet().removeIf { entry ->
@@ -835,26 +679,19 @@ class ProxmoxApiClient {
         return stats
     }
 
-    def closeAllConnections() {
+    static void closeAllConnections() {
         connectionPools.each { hostKey, pool ->
             pool.cleanup()
         }
         connectionPools.clear()
-        clearAuthCache()
     }
     
-    /**
-     * Utility method to build form data
-     */
     private String buildFormData(Map data) {
         return data.collect { k, v -> 
             URLEncoder.encode(k.toString(), 'UTF-8') + '=' + URLEncoder.encode(v.toString(), 'UTF-8') 
         }.join('&')
     }
     
-    /**
-     * Validate configuration
-     */
     def validateConfig() {
         def issues = []
         
