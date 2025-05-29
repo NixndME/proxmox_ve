@@ -1,3 +1,5 @@
+# proxmox-instance-types.scribe - FIXED VERSION
+
 resource "workload-type" "proxmox-1_0" {
   code             = "proxmox-1.0"
   shortName        = "proxmox"
@@ -11,21 +13,20 @@ resource "workload-type" "proxmox-1_0" {
   logTypeCode      = "proxmox"
   checkTypeCode    = "vmCheck"
   serverType       = "vm"
-  provisionType = "proxmox-ve-provision"
-  actions = ["generic-remove-node"]
+  provisionType    = "proxmox-ve-provision"
+  actions          = ["generic-remove-node"]
 }
-
 
 resource "workload-type-set" "proxmox-1_0-set" {
   code          = "proxmox-1.0-set"
-  workloadType = workload-type.proxmox-1_0
-  priorityOrder  = 0
-  dynamicCount   = true
+  workloadType  = workload-type.proxmox-1_0
+  priorityOrder = 0
+  dynamicCount  = true
   containerCount = 1
 }
 
 resource "instance-type" "proxmox-ve-provision" {
-  name                    = "Proxmox"
+  name                    = "Proxmox VE"
   code                    = "proxmox-ve-provision"
   category                = "cloud"
   active                  = true
@@ -36,36 +37,103 @@ resource "instance-type" "proxmox-ve-provision" {
   deploymentService       = "defaultDeployService"
   versions                = ["1.0"]
   hasAutoScale            = false
-  description             = "Spin up a VM in your Proxmox Cloud "
-  deploymentService       = "defaultDeployService"
-  provisionService        = "xenContainerService"
-  provisionTypeDefault    = true
-  environmentPrefix       = "PROXMOX"
+  description             = "Provision VMs in your Proxmox VE environment"
   provisionSelectType     = "zone"
   provisionType           = "proxmox-ve-provision"
+  environmentPrefix       = "PROXMOX"
   pluginIconPath          = "proxmox-full-lockup-color.svg"
   pluginIconHidpiPath     = "proxmox-logo-stacked-color.svg"
   pluginIconDarkPath      = "proxmox-full-lockup-inverted-color.svg"
   pluginIconDarkHidpiPath = "proxmox-logo-stacked-inverted-color.svg"
-  optionTypes             = ["instanceType.proxmox.image", "instanceType.proxmox.node"]
+  optionTypes             = [
+    "instanceType.proxmox.image", 
+    "instanceType.proxmox.node",
+    "instanceType.proxmox.storage",
+    "instanceType.proxmox.network"
+  ]
 }
-
 
 resource "instance-type-layout" "proxmox-1.0-vm" {
-  code                    = "proxmox-1.0-vm"
-  name                    = "Proxmox VM"
-  sortOrder               = 0
-  instanceVersion         = "1.0"
-  description             = "This will provision a single VM"
-  instanceType            = instance-type.proxmox-ve-provision
-  serverCount             = 1
-  portCount               = 1
-  enabled                 = true
-  creatable               = true
-  containers              = [workload-type-set.proxmox-1_0-set]
-  actions                 = ["generic-add-node"]
-  optionTypes             = []
-  provisionType           = "proxmox-ve-provision"
+  code            = "proxmox-1.0-vm"
+  name            = "Proxmox VM"
+  sortOrder       = 0
+  instanceVersion = "1.0"
+  description     = "Single VM deployment on Proxmox VE"
+  instanceType    = instance-type.proxmox-ve-provision
+  serverCount     = 1
+  portCount       = 1
+  enabled         = true
+  creatable       = true
+  containers      = [workload-type-set.proxmox-1_0-set]
+  actions         = ["generic-add-node"]
+  provisionType   = "proxmox-ve-provision"
 }
 
+# proxmox-option-types.scribe - ENHANCED VERSION
 
+resource "option-type" "instanceType-proxmox-image" {
+  code         = "instanceType.proxmox.image"
+  name         = "Virtual Image"
+  type         = "select"
+  category     = "proxmox.image"
+  fieldName    = "imageId"
+  fieldCode    = "gomorpheus.optiontype.Image"
+  fieldLabel   = "Virtual Image"
+  fieldContext = "config"
+  fieldGroup   = "Configuration"
+  optionSource = "proxmoxVeProvisionImage"
+  required     = true
+  enabled      = true
+  editable     = false
+  global       = false
+  displayOrder = 10
+  helpBlock    = "Select a virtual image for VM provisioning"
+}
+
+resource "option-type" "instanceType-proxmox-node" {
+  code         = "instanceType.proxmox.node"
+  name         = "Proxmox Node"
+  type         = "select"
+  fieldName    = "proxmoxNode"
+  fieldContext = "config"
+  fieldLabel   = "Target Node"
+  fieldGroup   = "Configuration"
+  optionSource = "proxmoxVeNode"
+  required     = true
+  enabled      = true
+  editable     = false
+  displayOrder = 20
+  helpBlock    = "Select the Proxmox node for VM deployment"
+}
+
+resource "option-type" "instanceType-proxmox-storage" {
+  code         = "instanceType.proxmox.storage"
+  name         = "Storage Pool"
+  type         = "select"
+  fieldName    = "storagePool"
+  fieldContext = "config"
+  fieldLabel   = "Storage Pool"
+  fieldGroup   = "Configuration"
+  optionSource = "proxmoxVeStorage"
+  required     = true
+  enabled      = true
+  editable     = false
+  displayOrder = 30
+  helpBlock    = "Select storage pool for VM disks"
+}
+
+resource "option-type" "instanceType-proxmox-network" {
+  code         = "instanceType.proxmox.network"
+  name         = "Network Bridge"
+  type         = "select"
+  fieldName    = "networkBridge"
+  fieldContext = "config" 
+  fieldLabel   = "Network Bridge"
+  fieldGroup   = "Configuration"
+  optionSource = "proxmoxVeNetworks"
+  required     = true
+  enabled      = true
+  editable     = false
+  displayOrder = 40
+  helpBlock    = "Select network bridge for VM connectivity"
+}

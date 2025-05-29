@@ -1,45 +1,428 @@
-<form class="form">
-  <div class="row">
-    <div class="col-md-6">
-      <div class="form-group required">
-        <label for="serviceUrl" class="control-label">Service URL</label>
-        <input type="text" class="form-control" id="serviceUrl" name="serviceUrl" value="{{cloudConfig.serviceUrl}}" required>
-      </div>
-    </div>
-    <div class="col-md-6">
-      <div class="form-group required">
-        <label for="username" class="control-label">Username</label>
-        <input type="text" class="form-control" id="username" name="username" value="{{cloudConfig.username}}" required>
-      </div>
-    </div>
-    <div class="col-md-6">
-      <div class="form-group required">
-        <label for="password" class="control-label">Password</label>
-        <input type="password" class="form-control" id="password" name="password" value="{{cloudConfig.password}}" required>
-      </div>
-    </div>
-    <div class="col-md-6">
-      <div class="form-group">
-        <div class="form-check mt-4">
-          <input type="checkbox" class="form-check-input" id="ignoreSsl" name="ignoreSsl" {{#if cloudConfig.ignoreSsl}}checked{{/if}}>
-          <label class="form-check-label" for="ignoreSsl">Ignore SSL</label>
+<form class="form-horizontal" role="form">
+    <div class="form-group">
+        <label class="col-sm-3 control-label required">Name</label>
+        <div class="col-sm-9">
+            <input type="text" class="form-control" name="name" value="{{zone.name}}" placeholder="Proxmox Cloud Name" required>
+            <div class="help-block">
+                <small>Enter a descriptive name for this Proxmox VE cloud</small>
+            </div>
         </div>
-        <small class="text-warning">Ignoring SSL verification can be insecure.</small>
-      </div>
     </div>
-    <div class="col-md-6">
-      <div class="form-group">
-        <label for="datacenter" class="control-label">Datacenter</label>
-        <input type="text" class="form-control" id="datacenter" name="datacenter" value="{{cloudConfig.datacenter}}">
-      </div>
-    </div>
-    <div class="col-md-6">
-      <div class="form-group">
-        <div class="form-check mt-4">
-          <input type="checkbox" class="form-check-input" id="enabled" name="enabled" {{#if cloudConfig.enabled}}checked{{/if}}>
-          <label class="form-check-label" for="enabled">Enabled</label>
+
+    <div class="form-group">
+        <label class="col-sm-3 control-label">Description</label>
+        <div class="col-sm-9">
+            <textarea class="form-control" name="description" rows="3" placeholder="Optional description">{{zone.description}}</textarea>
+            <div class="help-block">
+                <small>Optional description for this cloud integration</small>
+            </div>
         </div>
-      </div>
     </div>
-  </div>
+
+    <div class="form-group">
+        <label class="col-sm-3 control-label">Location</label>
+        <div class="col-sm-9">
+            <input type="text" class="form-control" name="location" value="{{zone.location}}" placeholder="Data Center Location">
+            <div class="help-block">
+                <small>Physical location of the Proxmox cluster (optional)</small>
+            </div>
+        </div>
+    </div>
+
+    <div class="form-group">
+        <label class="col-sm-3 control-label">Visibility</label>
+        <div class="col-sm-9">
+            <select class="form-control" name="visibility">
+                <option value="private" {{#if (eq zone.visibility "private")}}selected{{/if}}>Private</option>
+                <option value="public" {{#if (eq zone.visibility "public")}}selected{{/if}}>Public</option>
+            </select>
+            <div class="help-block">
+                <small>Control who can access this cloud</small>
+            </div>
+        </div>
+    </div>
+
+    <!-- Connection Settings -->
+    <div class="panel panel-default">
+        <div class="panel-heading">
+            <h4 class="panel-title">
+                <i class="fa fa-cog"></i> Connection Settings
+            </h4>
+        </div>
+        <div class="panel-body">
+            <div class="form-group">
+                <label class="col-sm-3 control-label required">API URL</label>
+                <div class="col-sm-9">
+                    <input type="url" class="form-control" name="serviceUrl" value="{{zone.serviceUrl}}" 
+                           placeholder="https://proxmox.example.com:8006" required>
+                    <div class="help-block">
+                        <small>Full URL to your Proxmox VE web interface (including https:// and port)</small>
+                    </div>
+                </div>
+            </div>
+
+            <div class="form-group">
+                <label class="col-sm-3 control-label">API Version</label>
+                <div class="col-sm-9">
+                    <select class="form-control" name="apiVersion">
+                        <option value="2" {{#if (eq zone.apiVersion "2")}}selected{{/if}}>API v2 (Recommended)</option>
+                    </select>
+                    <div class="help-block">
+                        <small>Proxmox API version to use</small>
+                    </div>
+                </div>
+            </div>
+
+            <div class="form-group">
+                <label class="col-sm-3 control-label">SSL Verification</label>
+                <div class="col-sm-9">
+                    <div class="checkbox">
+                        <label>
+                            <input type="checkbox" name="ignoreSsl" value="on" {{#if zone.ignoreSsl}}checked{{/if}}>
+                            Disable SSL Certificate Verification
+                        </label>
+                    </div>
+                    <div class="help-block">
+                        <small class="text-warning">
+                            <i class="fa fa-warning"></i> 
+                            Only disable for testing environments with self-signed certificates
+                        </small>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Authentication Settings -->
+    <div class="panel panel-default">
+        <div class="panel-heading">
+            <h4 class="panel-title">
+                <i class="fa fa-key"></i> Authentication
+            </h4>
+        </div>
+        <div class="panel-body">
+            <div class="form-group">
+                <label class="col-sm-3 control-label">Credentials</label>
+                <div class="col-sm-9">
+                    <select class="form-control" name="credentialType" id="credentialType">
+                        <option value="local" {{#if (eq zone.credentialType "local")}}selected{{/if}}>Local Credentials</option>
+                        <option value="username-password" {{#if (eq zone.credentialType "username-password")}}selected{{/if}}>Username & Password</option>
+                    </select>
+                    <div class="help-block">
+                        <small>Choose how to authenticate with Proxmox VE</small>
+                    </div>
+                </div>
+            </div>
+
+            <div id="localCredentials" style="{{#unless (eq zone.credentialType 'local')}}display: none;{{/unless}}">
+                <div class="form-group">
+                    <label class="col-sm-3 control-label required">Username</label>
+                    <div class="col-sm-9">
+                        <input type="text" class="form-control" name="serviceUsername" value="{{zone.serviceUsername}}" 
+                               placeholder="root@pam" required>
+                        <div class="help-block">
+                            <small>Proxmox username with format: username@realm (e.g., root@pam, admin@pve)</small>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="form-group">
+                    <label class="col-sm-3 control-label required">Password</label>
+                    <div class="col-sm-9">
+                        <input type="password" class="form-control" name="servicePassword" value="{{zone.servicePassword}}" 
+                               placeholder="Enter password" required autocomplete="new-password">
+                        <div class="help-block">
+                            <small>Password for the Proxmox user account</small>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div id="credentialSelect" style="{{#if (eq zone.credentialType 'local')}}display: none;{{/if}}">
+                <div class="form-group">
+                    <label class="col-sm-3 control-label required">Select Credential</label>
+                    <div class="col-sm-9">
+                        <select class="form-control" name="credential.id">
+                            <option value="">Select Credential...</option>
+                            {{#each credentials}}
+                            <option value="{{id}}" {{#if (eq ../zone.credential.id id)}}selected{{/if}}>
+                                {{name}} ({{type}})
+                            </option>
+                            {{/each}}
+                        </select>
+                        <div class="help-block">
+                            <small>Select from stored credentials or create a new one</small>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Advanced Settings -->
+    <div class="panel panel-default">
+        <div class="panel-heading">
+            <h4 class="panel-title">
+                <a data-toggle="collapse" data-target="#advancedSettings" class="collapsed">
+                    <i class="fa fa-cog"></i> Advanced Settings
+                    <i class="fa fa-chevron-down pull-right"></i>
+                </a>
+            </h4>
+        </div>
+        <div id="advancedSettings" class="panel-collapse collapse">
+            <div class="panel-body">
+                <div class="form-group">
+                    <label class="col-sm-3 control-label">Datacenter</label>
+                    <div class="col-sm-9">
+                        <input type="text" class="form-control" name="datacenter" value="{{zone.datacenter}}" 
+                               placeholder="Optional datacenter name">
+                        <div class="help-block">
+                            <small>Specify a datacenter name if your Proxmox cluster spans multiple datacenters</small>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="form-group">
+                    <label class="col-sm-3 control-label">Connection Timeout</label>
+                    <div class="col-sm-9">
+                        <div class="input-group">
+                            <input type="number" class="form-control" name="connectionTimeout" 
+                                   value="{{zone.connectionTimeout}}" placeholder="30" min="5" max="300">
+                            <span class="input-group-addon">seconds</span>
+                        </div>
+                        <div class="help-block">
+                            <small>API connection timeout in seconds (default: 30)</small>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="form-group">
+                    <label class="col-sm-3 control-label">Refresh Interval</label>
+                    <div class="col-sm-9">
+                        <select class="form-control" name="refreshMode">
+                            <option value="costing" {{#if (eq zone.refreshMode "costing")}}selected{{/if}}>Costing (Default)</option>
+                            <option value="manual" {{#if (eq zone.refreshMode "manual")}}selected{{/if}}>Manual</option>
+                        </select>
+                        <div class="help-block">
+                            <small>How often to refresh cloud resources</small>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="form-group">
+                    <label class="col-sm-3 control-label">Agent Install Mode</label>
+                    <div class="col-sm-9">
+                        <select class="form-control" name="agentMode">
+                            <option value="cloudInit" {{#if (eq zone.agentMode "cloudInit")}}selected{{/if}}>Cloud-Init (Recommended)</option>
+                            <option value="ssh" {{#if (eq zone.agentMode "ssh")}}selected{{/if}}>SSH</option>
+                            <option value="winrm" {{#if (eq zone.agentMode "winrm")}}selected{{/if}}>WinRM</option>
+                        </select>
+                        <div class="help-block">
+                            <small>Method used to install the Morpheus agent on provisioned VMs</small>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="form-group">
+                    <label class="col-sm-3 control-label">Default Node Pool</label>
+                    <div class="col-sm-9">
+                        <input type="text" class="form-control" name="defaultNodePool" value="{{zone.defaultNodePool}}" 
+                               placeholder="Leave blank for automatic selection">
+                        <div class="help-block">
+                            <small>Default Proxmox node for new VMs (optional)</small>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="form-group">
+                    <label class="col-sm-3 control-label">Default Storage</label>
+                    <div class="col-sm-9">
+                        <input type="text" class="form-control" name="defaultStorage" value="{{zone.defaultStorage}}" 
+                               placeholder="local-lvm">
+                        <div class="help-block">
+                            <small>Default storage pool for new VMs (e.g., local-lvm, local-zfs)</small>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="form-group">
+                    <label class="col-sm-3 control-label">Default Network</label>
+                    <div class="col-sm-9">
+                        <input type="text" class="form-control" name="defaultNetwork" value="{{zone.defaultNetwork}}" 
+                               placeholder="vmbr0">
+                        <div class="help-block">
+                            <small>Default network bridge for new VMs (e.g., vmbr0, vmbr1)</small>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Status and Permissions -->
+    <div class="panel panel-default">
+        <div class="panel-heading">
+            <h4 class="panel-title">
+                <i class="fa fa-toggle-on"></i> Status & Permissions
+            </h4>
+        </div>
+        <div class="panel-body">
+            <div class="form-group">
+                <label class="col-sm-3 control-label">Status</label>
+                <div class="col-sm-9">
+                    <div class="checkbox">
+                        <label>
+                            <input type="checkbox" name="enabled" value="on" {{#if zone.enabled}}checked{{/if}}>
+                            Enabled
+                        </label>
+                    </div>
+                    <div class="help-block">
+                        <small>Enable this cloud for provisioning operations</small>
+                    </div>
+                </div>
+            </div>
+
+            <div class="form-group">
+                <label class="col-sm-3 control-label">Auto Capacity</label>
+                <div class="col-sm-9">
+                    <div class="checkbox">
+                        <label>
+                            <input type="checkbox" name="autoCapacity" value="on" {{#if zone.autoCapacity}}checked{{/if}}>
+                            Automatically scale capacity
+                        </label>
+                    </div>
+                    <div class="help-block">
+                        <small>Allow Morpheus to automatically manage capacity across nodes</small>
+                    </div>
+                </div>
+            </div>
+
+            <div class="form-group">
+                <label class="col-sm-3 control-label">Tenant Permissions</label>
+                <div class="col-sm-9">
+                    <select class="form-control" name="accountId">
+                        <option value="">Master Tenant</option>
+                        {{#each accounts}}
+                        <option value="{{id}}" {{#if (eq ../zone.accountId id)}}selected{{/if}}>
+                            {{name}}
+                        </option>
+                        {{/each}}
+                    </select>
+                    <div class="help-block">
+                        <small>Assign this cloud to a specific tenant (optional)</small>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Guidance Panel -->
+    <div class="panel panel-info">
+        <div class="panel-heading">
+            <h4 class="panel-title">
+                <i class="fa fa-info-circle"></i> Quick Setup Guide
+            </h4>
+        </div>
+        <div class="panel-body">
+            <div class="row">
+                <div class="col-md-6">
+                    <h5><i class="fa fa-check-circle text-success"></i> Prerequisites</h5>
+                    <ul class="list-unstyled">
+                        <li>• Proxmox VE 6.0+ cluster</li>
+                        <li>• API access enabled</li>
+                        <li>• Valid user account with VM management permissions</li>
+                        <li>• Network connectivity to Proxmox API</li>
+                    </ul>
+                </div>
+                <div class="col-md-6">
+                    <h5><i class="fa fa-lightbulb-o text-warning"></i> Tips</h5>
+                    <ul class="list-unstyled">
+                        <li>• Use <code>root@pam</code> for initial setup</li>
+                        <li>• Ensure firewall allows port 8006</li>
+                        <li>• Test credentials before saving</li>
+                        <li>• Consider using dedicated service account</li>
+                    </ul>
+                </div>
+            </div>
+        </div>
+    </div>
 </form>
+
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    // Toggle credential input based on selection
+    const credentialType = document.getElementById('credentialType');
+    const localCredentials = document.getElementById('localCredentials');
+    const credentialSelect = document.getElementById('credentialSelect');
+    
+    function toggleCredentialInputs() {
+        if (credentialType.value === 'local') {
+            localCredentials.style.display = 'block';
+            credentialSelect.style.display = 'none';
+        } else {
+            localCredentials.style.display = 'none';
+            credentialSelect.style.display = 'block';
+        }
+    }
+    
+    credentialType.addEventListener('change', toggleCredentialInputs);
+    
+    // Initialize on page load
+    toggleCredentialInputs();
+    
+    // Form validation
+    const form = document.querySelector('form');
+    form.addEventListener('submit', function(e) {
+        const serviceUrl = document.querySelector('input[name="serviceUrl"]').value;
+        
+        // Validate URL format
+        if (serviceUrl && !serviceUrl.match(/^https?:\/\/.+/)) {
+            e.preventDefault();
+            alert('Please enter a valid URL starting with http:// or https://');
+            return false;
+        }
+        
+        // Validate credentials
+        if (credentialType.value === 'local') {
+            const username = document.querySelector('input[name="serviceUsername"]').value;
+            const password = document.querySelector('input[name="servicePassword"]').value;
+            
+            if (!username || !password) {
+                e.preventDefault();
+                alert('Please enter both username and password');
+                return false;
+            }
+        }
+    });
+});
+</script>
+
+<style>
+.panel-title a {
+    text-decoration: none;
+    color: inherit;
+}
+
+.panel-title a:hover {
+    text-decoration: none;
+    color: inherit;
+}
+
+.help-block small {
+    color: #737373;
+}
+
+.text-warning {
+    color: #f0ad4e !important;
+}
+
+.required:after {
+    content: " *";
+    color: red;
+}
+
+.form-horizontal .control-label.required:after {
+    content: " *";
+    color: red;
+}
+</style>

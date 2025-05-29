@@ -1,36 +1,34 @@
 resource "option-type" "instanceType-proxmox-image" {
   code         = "instanceType.proxmox.image"
+  name         = "Virtual Image"
   type         = "select"
-  name         = "Image"
   category     = "proxmox.image"
   fieldName    = "imageId"
-  optionSource = "proxmoxVeProvisionImage"
   fieldCode    = "gomorpheus.optiontype.Image"
-  fieldLabel   = "Image"
+  fieldLabel   = "Virtual Image"
   fieldContext = "config"
-  fieldGroup   = "Options"
+  fieldGroup   = "Configuration"
+  optionSource = "proxmoxVeProvisionImage"
   required     = true
   enabled      = true
   editable     = false
   global       = false
-  placeHolder  = null
-  helpBlock    = ""
-  defaultValue = null
-  custom       = false
-  displayOrder = 1
-  fieldClass   = null
-  description  = "Choose from a list of Virtual Images that might want to be provisioned."
+  displayOrder = 10
+  helpBlock    = "Select a virtual image for VM provisioning"
 }
 
-
-resource "option-type" "proxmox-nodes" {
-  name = "hypervisorNode"
-  code = "instanceType.proxmox.node"
-  fieldName = "proxmoxNode"
+resource "option-type" "instanceType-proxmox-node" {
+  code         = "instanceType.proxmox.node"
+  name         = "Proxmox Node"
+  type         = "select"
+  fieldName    = "proxmoxNode"
   fieldContext = "config"
-  fieldLabel = "Proxmox Node"
-  type = "select"
-  displayOrder = 102
-  required = true
+  fieldLabel   = "Target Node"
+  fieldGroup   = "Configuration"
   optionSource = "proxmoxVeNode"
+  required     = true
+  enabled      = true
+  editable     = false
+  displayOrder = 20
+  helpBlock    = "Select the Proxmox node for VM deployment"
 }
