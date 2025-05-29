@@ -14,11 +14,17 @@ import com.morpheusdata.model.BackupProvider as BackupProviderModel
 import com.morpheusdata.model.ComputeServer
 import com.morpheusdata.response.ServiceResponse
 import groovy.util.logging.Slf4j
+import java.util.concurrent.TimeUnit
+import java.util.concurrent.atomic.AtomicLong
 
 @Slf4j
 class ProxmoxBackupProvider extends AbstractBackupProvider {
 
     public static final String PROVIDER_CODE = 'proxmox-ve-backup'
+    private static final int DEFAULT_RETENTION_COUNT = 7
+    private static final int MAX_MONITOR_ATTEMPTS = 120
+    private static final long MONITOR_SLEEP_MS = 5000
+    private static final AtomicLong vmIdCounter = new AtomicLong(System.currentTimeMillis())
 
     protected MorpheusContext morpheusContext
     protected ProxmoxVePlugin plugin
@@ -76,6 +82,10 @@ class ProxmoxBackupProvider extends AbstractBackupProvider {
 
     @Override
     ServiceResponse deleteBackupProvider(BackupProviderModel backupProvider, Map opts) {
+        if (!backupProvider) {
+            return ServiceResponse.error("Backup provider is required")
+        }
+        
         try {
             log.info("Deleting backup provider: ${backupProvider.name}")
             return ServiceResponse.success()
@@ -87,6 +97,10 @@ class ProxmoxBackupProvider extends AbstractBackupProvider {
 
     @Override
     ServiceResponse refresh(BackupProviderModel backupProvider) {
+        if (!backupProvider) {
+            return ServiceResponse.error("Backup provider is required")
+        }
+        
         try {
             log.info("Refreshing backup provider: ${backupProvider.name}")
             return ServiceResponse.success()
@@ -98,11 +112,11 @@ class ProxmoxBackupProvider extends AbstractBackupProvider {
 
     @Override
     BackupJobProvider getBackupJobProvider() {
-        return null // Return null if no specific backup job provider is needed
+        return null
     }
 
     Boolean canBackupServer(ComputeServer server) {
-        return true
+        return server != null && server.powerState == 'on'
     }
 
     @Override
@@ -120,6 +134,10 @@ class ProxmoxBackupProvider extends AbstractBackupProvider {
     }
 
     ServiceResponse configureBackup(BackupJob backupJob, Map config, Map opts) {
+        if (!backupJob) {
+            return ServiceResponse.error("Backup job is required")
+        }
+        
         try {
             log.info("Configuring backup job: ${backupJob.name}")
             def validation = validateBackupConfig(config)
@@ -127,7 +145,7 @@ class ProxmoxBackupProvider extends AbstractBackupProvider {
                 return validation
 
             backupJob.setConfigProperty('backupType', config.backupType ?: 'snapshot')
-            backupJob.setConfigProperty('retentionCount', config.retentionCount ?: 7)
+            backupJob.setConfigProperty('retentionCount', config.retentionCount ?: DEFAULT_RETENTION_COUNT)
             backupJob.setConfigProperty('compression', config.compression ?: 'lzo')
             backupJob.setConfigProperty('mode', config.mode ?: 'snapshot')
             backupJob.setConfigProperty('storage', config.storage)
@@ -140,6 +158,11 @@ class ProxmoxBackupProvider extends AbstractBackupProvider {
     }
 
     ServiceResponse executeBackup(BackupJob backupJob, Map opts) {
+        if (!backupJob || !backupJob.computeServer || !backupJob.computeServer.cloud) {
+            return ServiceResponse.error("Invalid backup job configuration")
+        }
+        
+        ProxmoxApiClient apiClient = null
         try {
             log.info("Executing backup job: ${backupJob.name}")
             def backupResult = new BackupResult(
@@ -148,21 +171,33 @@ class ProxmoxBackupProvider extends AbstractBackupProvider {
                 startDate: new Date(),
                 backupType: 'proxmox-snapshot'
             )
-            def apiClient = new ProxmoxApiClient(morpheusContext, backupJob.computeServer.cloud, plugin)
+            apiClient = new ProxmoxApiClient(morpheusContext, backupJob.computeServer.cloud, plugin)
             def result = performBackup(apiClient, backupJob, backupResult, opts)
             return ServiceResponse.success(result)
         } catch(Exception e) {
             log.error("Backup execution failed: ${e.message}", e)
             return ServiceResponse.error("Backup execution failed: ${e.message}")
+        } finally {
+            ProxmoxApiClient.cleanupIdleConnections()
         }
     }
 
     ServiceResponse deleteBackup(Backup backup, Map opts) {
+        if (!backup || !backup.computeServer || !backup.computeServer.cloud) {
+            return ServiceResponse.error("Invalid backup configuration")
+        }
+        
+        ProxmoxApiClient apiClient = null
         try {
             log.info("Deleting backup: ${backup.name}")
-            def apiClient = new ProxmoxApiClient(morpheusContext, backup.computeServer.cloud, plugin)
+            apiClient = new ProxmoxApiClient(morpheusContext, backup.computeServer.cloud, plugin)
             def node = backup.computeServer.parentServer?.externalId
             def vmId = backup.computeServer.externalId
+            
+            if (!node || !vmId) {
+                return ServiceResponse.error("Missing node or VM ID")
+            }
+            
             if(backup.backupType == 'snapshot') {
                 def result = apiClient.deleteSnapshot(node, vmId, backup.externalId)
                 if(result) {
@@ -181,14 +216,21 @@ class ProxmoxBackupProvider extends AbstractBackupProvider {
         } catch(Exception e) {
             log.error("Backup deletion failed: ${e.message}", e)
             return ServiceResponse.error("Backup deletion failed: ${e.message}")
+        } finally {
+            ProxmoxApiClient.cleanupIdleConnections()
         }
     }
 
     ServiceResponse restoreBackup(BackupRestore backupRestore, Map opts) {
+        if (!backupRestore || !backupRestore.backup || !backupRestore.backup.computeServer) {
+            return ServiceResponse.error("Invalid backup restore configuration")
+        }
+        
+        ProxmoxApiClient apiClient = null
         try {
             log.info("Restoring backup: ${backupRestore.backup.name}")
             def backup = backupRestore.backup
-            def apiClient = new ProxmoxApiClient(morpheusContext, backup.computeServer.cloud, plugin)
+            apiClient = new ProxmoxApiClient(morpheusContext, backup.computeServer.cloud, plugin)
             if(backup.backupType == 'snapshot') {
                 return restoreFromSnapshot(apiClient, backupRestore, opts)
             } else if(backup.backupType == 'vzdump') {
@@ -198,6 +240,8 @@ class ProxmoxBackupProvider extends AbstractBackupProvider {
         } catch(Exception e) {
             log.error("Backup restore failed: ${e.message}", e)
             return ServiceResponse.error("Backup restore failed: ${e.message}")
+        } finally {
+            ProxmoxApiClient.cleanupIdleConnections()
         }
     }
 
@@ -205,13 +249,23 @@ class ProxmoxBackupProvider extends AbstractBackupProvider {
         if(config?.backupType == 'vzdump' && !config.storage) {
             return ServiceResponse.error('Storage is required for vzdump backups')
         }
+        
+        if(config?.retentionCount && config.retentionCount < 1) {
+            return ServiceResponse.error('Retention count must be at least 1')
+        }
+        
         return ServiceResponse.success()
     }
 
-    private def performBackup(apiClient, BackupJob backupJob, BackupResult backupResult, Map opts) {
+    private def performBackup(ProxmoxApiClient apiClient, BackupJob backupJob, BackupResult backupResult, Map opts) {
         def server = backupJob.computeServer
         def node = server.parentServer?.externalId
         def vmId = server.externalId
+        
+        if (!node || !vmId) {
+            throw new RuntimeException("Missing node or VM ID for backup")
+        }
+        
         def backupType = backupJob.getConfigProperty('backupType')
         switch(backupType) {
             case 'snapshot':
@@ -223,7 +277,7 @@ class ProxmoxBackupProvider extends AbstractBackupProvider {
         }
     }
 
-    private def createSnapshotBackup(apiClient, BackupJob backupJob, BackupResult backupResult, String node, String vmId) {
+    private def createSnapshotBackup(ProxmoxApiClient apiClient, BackupJob backupJob, BackupResult backupResult, String node, String vmId) {
         def snapName = "morpheus-backup-${System.currentTimeMillis()}"
         def description = "Morpheus backup created on ${new Date()}"
         try {
@@ -249,7 +303,7 @@ class ProxmoxBackupProvider extends AbstractBackupProvider {
         }
     }
 
-    private def createVzdumpBackup(apiClient, BackupJob backupJob, BackupResult backupResult, String node, String vmId) {
+    private def createVzdumpBackup(ProxmoxApiClient apiClient, BackupJob backupJob, BackupResult backupResult, String node, String vmId) {
         def storage = backupJob.getConfigProperty('storage') ?: 'local'
         def compression = backupJob.getConfigProperty('compression') ?: 'lzo'
         def mode = backupJob.getConfigProperty('mode') ?: 'snapshot'
@@ -263,7 +317,7 @@ class ProxmoxBackupProvider extends AbstractBackupProvider {
                 notes: "Morpheus backup created on ${new Date()}"
             ]
             def result = apiClient.createVzdumpBackup(node, backupConfig)
-            if(result) {
+            if(result?.data) {
                 def taskId = result.data
                 def backupInfo = monitorBackupTask(apiClient, node, taskId)
                 backupResult.status = backupInfo.success ? 'COMPLETED' : 'FAILED'
@@ -289,16 +343,21 @@ class ProxmoxBackupProvider extends AbstractBackupProvider {
         }
     }
 
-    private def cleanupOldSnapshots(apiClient, BackupJob backupJob, String node, String vmId) {
-        def retentionCount = backupJob.getConfigProperty('retentionCount') as Integer ?: 7
+    private def cleanupOldSnapshots(ProxmoxApiClient apiClient, BackupJob backupJob, String node, String vmId) {
+        def retentionCount = (backupJob.getConfigProperty('retentionCount') as Integer) ?: DEFAULT_RETENTION_COUNT
         try {
             def snapshots = apiClient.getVmSnapshots(node, vmId)
-            def morpheusSnapshots = snapshots.data?.findAll { it.name?.startsWith('morpheus-backup-') }
-            if(morpheusSnapshots && morpheusSnapshots.size() > retentionCount) {
+            def morpheusSnapshots = snapshots?.data?.findAll { it.name?.startsWith('morpheus-backup-') } ?: []
+            if(morpheusSnapshots.size() > retentionCount) {
                 morpheusSnapshots.sort { it.snaptime }
-                morpheusSnapshots.take(morpheusSnapshots.size() - retentionCount).each { snap ->
-                    log.info("Cleaning up old snapshot: ${snap.name}")
-                    apiClient.deleteSnapshot(node, vmId, snap.name)
+                def toDelete = morpheusSnapshots.take(morpheusSnapshots.size() - retentionCount)
+                toDelete.each { snap ->
+                    try {
+                        log.info("Cleaning up old snapshot: ${snap.name}")
+                        apiClient.deleteSnapshot(node, vmId, snap.name)
+                    } catch(Exception e) {
+                        log.warn("Failed to delete old snapshot ${snap.name}: ${e.message}")
+                    }
                 }
             }
         } catch(Exception e) {
@@ -306,17 +365,22 @@ class ProxmoxBackupProvider extends AbstractBackupProvider {
         }
     }
 
-    private def cleanupOldBackups(apiClient, BackupJob backupJob, String node, String storage) {
-        def retentionCount = backupJob.getConfigProperty('retentionCount') as Integer ?: 7
+    private def cleanupOldBackups(ProxmoxApiClient apiClient, BackupJob backupJob, String node, String storage) {
+        def retentionCount = (backupJob.getConfigProperty('retentionCount') as Integer) ?: DEFAULT_RETENTION_COUNT
         try {
             def backups = apiClient.getStorageBackups(node, storage)
             def vmId = backupJob.computeServer.externalId
-            def vmBackups = backups.data?.findAll { it.vmid == vmId }
-            if(vmBackups && vmBackups.size() > retentionCount) {
+            def vmBackups = backups?.data?.findAll { it.vmid == vmId } ?: []
+            if(vmBackups.size() > retentionCount) {
                 vmBackups.sort { it.ctime }
-                vmBackups.take(vmBackups.size() - retentionCount).each { bk ->
-                    log.info("Cleaning up old backup: ${bk.volid}")
-                    apiClient.deleteBackupFile(node, storage, bk.volid)
+                def toDelete = vmBackups.take(vmBackups.size() - retentionCount)
+                toDelete.each { bk ->
+                    try {
+                        log.info("Cleaning up old backup: ${bk.volid}")
+                        apiClient.deleteBackupFile(node, storage, bk.volid)
+                    } catch(Exception e) {
+                        log.warn("Failed to delete old backup ${bk.volid}: ${e.message}")
+                    }
                 }
             }
         } catch(Exception e) {
@@ -324,12 +388,17 @@ class ProxmoxBackupProvider extends AbstractBackupProvider {
         }
     }
 
-    private def restoreFromSnapshot(apiClient, BackupRestore backupRestore, Map opts) {
+    private ServiceResponse restoreFromSnapshot(ProxmoxApiClient apiClient, BackupRestore backupRestore, Map opts) {
         def backup = backupRestore.backup
         def server = backup.computeServer
         def node = server.parentServer?.externalId
         def vmId = server.externalId
         def snapName = backup.externalId
+        
+        if (!node || !vmId || !snapName) {
+            return ServiceResponse.error("Missing required information for snapshot restore")
+        }
+        
         try {
             def result = apiClient.rollbackSnapshot(node, vmId, snapName)
             if(result)
@@ -341,20 +410,26 @@ class ProxmoxBackupProvider extends AbstractBackupProvider {
         }
     }
 
-    private def restoreFromBackupFile(apiClient, BackupRestore backupRestore, Map opts) {
+    private ServiceResponse restoreFromBackupFile(ProxmoxApiClient apiClient, BackupRestore backupRestore, Map opts) {
         def backup = backupRestore.backup
-        def targetNode = opts.targetNode ?: backup.computeServer.parentServer?.externalId
-        def newVmId = opts.newVmId ?: getNextAvailableVmId(apiClient, targetNode)
-        def storage = opts.storage ?: 'local-lvm'
+        def targetNode = opts?.targetNode ?: backup.computeServer.parentServer?.externalId
+        
+        if (!targetNode) {
+            return ServiceResponse.error("Target node is required for backup restore")
+        }
+        
+        def newVmId = opts?.newVmId ?: getNextAvailableVmId(apiClient, targetNode)
+        def storage = opts?.storage ?: 'local-lvm'
+        
         try {
             def restoreConfig = [
                 archive: backup.externalId,
                 vmid: newVmId,
                 storage: storage,
-                unique: opts.unique ?: false
+                unique: opts?.unique ?: false
             ]
             def result = apiClient.restoreBackup(targetNode, restoreConfig)
-            if(result) {
+            if(result?.data) {
                 def taskId = result.data
                 def restoreInfo = monitorRestoreTask(apiClient, targetNode, taskId)
                 if(restoreInfo.success) {
@@ -370,9 +445,15 @@ class ProxmoxBackupProvider extends AbstractBackupProvider {
         }
     }
 
-    private boolean deleteBackupFile(apiClient, Backup backup) {
+    private boolean deleteBackupFile(ProxmoxApiClient apiClient, Backup backup) {
         def node = backup.computeServer.parentServer?.externalId
         def storage = backup.getConfigProperty('storage') ?: 'local'
+        
+        if (!node || !backup.externalId) {
+            log.warn("Missing required information to delete backup file")
+            return false
+        }
+        
         try {
             apiClient.deleteBackupFile(node, storage, backup.externalId)
             return true
@@ -382,51 +463,71 @@ class ProxmoxBackupProvider extends AbstractBackupProvider {
         }
     }
 
-    private def monitorBackupTask(apiClient, String node, String taskId) {
+    private def monitorBackupTask(ProxmoxApiClient apiClient, String node, String taskId) {
         int attempts = 0
-        while(attempts < 60) {
+        while(attempts < MAX_MONITOR_ATTEMPTS) {
             try {
                 def status = apiClient.getTaskStatus(node, taskId)
-                if(status.data?.status == 'stopped') {
+                if(status?.data?.status == 'stopped') {
                     def exitStatus = status.data?.exitstatus
-                    return [success: exitStatus == 'OK', backupFile: status.data?.id, sizeInMb: null, error: exitStatus]
+                    return [
+                        success: exitStatus == 'OK', 
+                        backupFile: status.data?.id, 
+                        sizeInMb: null, 
+                        error: exitStatus != 'OK' ? exitStatus : null
+                    ]
                 }
-                Thread.sleep(5000)
+                Thread.sleep(MONITOR_SLEEP_MS)
                 attempts++
             } catch(Exception e) {
                 log.warn("Error monitoring backup task: ${e.message}")
                 attempts++
+                if(attempts >= MAX_MONITOR_ATTEMPTS) {
+                    throw e
+                }
+                Thread.sleep(MONITOR_SLEEP_MS)
             }
         }
-        return [success:false, error:'timeout']
+        return [success: false, error: 'timeout after ${MAX_MONITOR_ATTEMPTS * MONITOR_SLEEP_MS / 1000} seconds']
     }
 
-    private def monitorRestoreTask(apiClient, String node, String taskId) {
+    private def monitorRestoreTask(ProxmoxApiClient apiClient, String node, String taskId) {
         int attempts = 0
-        while(attempts < 60) {
+        while(attempts < MAX_MONITOR_ATTEMPTS) {
             try {
                 def status = apiClient.getTaskStatus(node, taskId)
-                if(status.data?.status == 'stopped') {
+                if(status?.data?.status == 'stopped') {
                     def exitStatus = status.data?.exitstatus
-                    return [success: exitStatus == 'OK', error: exitStatus]
+                    return [
+                        success: exitStatus == 'OK', 
+                        error: exitStatus != 'OK' ? exitStatus : null
+                    ]
                 }
-                Thread.sleep(5000)
+                Thread.sleep(MONITOR_SLEEP_MS)
                 attempts++
             } catch(Exception e) {
                 log.warn("Error monitoring restore task: ${e.message}")
                 attempts++
+                if(attempts >= MAX_MONITOR_ATTEMPTS) {
+                    throw e
+                }
+                Thread.sleep(MONITOR_SLEEP_MS)
             }
         }
-        return [success:false, error:'timeout']
+        return [success: false, error: 'timeout after ${MAX_MONITOR_ATTEMPTS * MONITOR_SLEEP_MS / 1000} seconds']
     }
 
-    private def getNextAvailableVmId(apiClient, String node) {
+    private def getNextAvailableVmId(ProxmoxApiClient apiClient, String node) {
         try {
             def result = apiClient.getNextVmId(node)
-            return result.data ?: result
+            def vmId = result?.data ?: result
+            if(vmId && vmId instanceof Number) {
+                return vmId
+            }
         } catch(Exception e) {
-            log.warn("Failed to get next VM ID: ${e.message}")
-            return System.currentTimeMillis() % 100000
+            log.warn("Failed to get next VM ID from API: ${e.message}")
         }
+        
+        return 100000 + (vmIdCounter.incrementAndGet() % 100000)
     }
 }
