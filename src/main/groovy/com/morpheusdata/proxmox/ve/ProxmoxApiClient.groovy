@@ -121,15 +121,19 @@ class ProxmoxApiClient {
 
         try {
             connection = pool.borrowConnection()
-            if (!connection || !connection.isValid()) {
-                connection = createNewConnection(url, headers)
+            if (connection) {
+                if (!connection.isValid()) {
+                    pool.activeConnections.remove(connection)
+                    connection = createNewConnection(url, headers)
+                } else {
+                    connectionFromPool = true
+                    connection.updateHeaders(headers)
+                }
             } else {
-                connectionFromPool = true
-                connection.updateHeaders(headers)
+                connection = createNewConnection(url, headers)
             }
 
             def result = executeRequest(connection, method, body)
-            pool.returnConnection(connection)
 
             def endTime = System.currentTimeMillis()
             def duration = endTime - startTime
@@ -143,6 +147,14 @@ class ProxmoxApiClient {
             }
             log.error("HTTP call error: ${e.message}", e)
             throw new RuntimeException("API call failed: ${e.message}")
+        } finally {
+            if (connection) {
+                if (connection.isValid()) {
+                    pool.returnConnection(connection)
+                } else {
+                    pool.activeConnections.remove(connection)
+                }
+            }
         }
     }
     
